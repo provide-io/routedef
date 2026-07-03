@@ -4,9 +4,10 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from re import Pattern
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 from routedef.errors import RouteConfigError
 
@@ -60,6 +61,28 @@ def match_path(compiled_path: CompiledPath, path: str) -> dict[str, str] | None:
     if match is None:
         return None
     return {name: unquote(match.group(name)) for name in compiled_path.param_names}
+
+
+def expand_path_template(path_template: str, path_params: Mapping[str, object], *, encode: bool = True) -> str:
+    compiled_path = compile_path_template(path_template)
+    expected = set(compiled_path.param_names)
+    provided = set(path_params)
+    missing = expected - provided
+    if missing:
+        raise RouteConfigError(f"missing path params: {', '.join(sorted(missing))}")
+    unknown = provided - expected
+    if unknown:
+        raise RouteConfigError(f"unknown path params: {', '.join(sorted(unknown))}")
+
+    expanded = path_template
+    for name in compiled_path.param_names:
+        value = str(path_params[name])
+        if encode:
+            value = quote(value, safe="")  # pragma: no mutate - alphanumeric safe mutations are equivalent.
+        elif "/" in value:
+            raise RouteConfigError(f"path param {name!r} must not contain '/'")
+        expanded = expanded.replace(f"{{{name}}}", value)
+    return expanded
 
 
 def _validate_path_template(path_template: str) -> None:

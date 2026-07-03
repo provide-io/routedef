@@ -38,12 +38,17 @@ class RouteTable(Generic[AuthT, ContextT]):
     def __init__(self, routes: Iterable[RouteDef[AuthT, ContextT]]) -> None:
         compiled_routes: list[CompiledRoute[AuthT, ContextT]] = []
         seen_routes: set[tuple[str, str]] = set()
+        seen_names: set[str] = set()
 
         for route in routes:
             route_key = (route.method, route.path)
             if route_key in seen_routes:
                 raise RouteConfigError(f"route table contains duplicate route {route.method} {route.path}")
             seen_routes.add(route_key)
+            if route.name is not None:
+                if route.name in seen_names:
+                    raise RouteConfigError(f"route table contains duplicate route name {route.name!r}")
+                seen_names.add(route.name)
             compiled_routes.append(CompiledRoute(route=route, compiled_path=compile_path_template(route.path)))
 
         object.__setattr__(self, "routes", tuple(compiled_routes))

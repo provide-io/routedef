@@ -9,6 +9,7 @@ from typing import TypeAlias, TypeVar, cast
 
 from fastapi import APIRouter, Request, Response
 
+from routedef.adapters.errors import AdapterError
 from routedef.contracts import RouteDef, RouteRequest, RouteResponse
 from routedef.errors import BadRequestBody
 from routedef.headers import get_header
@@ -25,9 +26,12 @@ ContextProvider = Callable[[Request], MaybeAwaitable[ContextT]]
 AuthProvider = Callable[[RouteDef[AuthT, ContextT], Request, ContextT], MaybeAwaitable[AuthT]]
 EnforcerResult = None | bool | RouteResponse
 Enforcer = Callable[[RouteDef[AuthT, ContextT], Request, ContextT, AuthT], MaybeAwaitable[EnforcerResult]]
+ErrorHandler = Callable[[AdapterError, Request], MaybeAwaitable[RouteResponse]]
 
 JSON_CONTENT_TYPE = "application/json"
 JSON_SUFFIX = "+json"
+COMMON_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD")
+__all__ = ("AdapterError", "build_fastapi_router")
 
 
 def build_fastapi_router(
@@ -36,13 +40,16 @@ def build_fastapi_router(
     context_provider: ContextProvider[ContextT] | None = None,
     auth_provider: AuthProvider[AuthT, ContextT] | None = None,
     enforcer: Enforcer[AuthT, ContextT] | None = None,
+    error_handler: ErrorHandler | None = None,
+    max_body_bytes: int | None = None,
 ) -> APIRouter:
     route_table = RouteTable(routes)
     router = APIRouter()
 
     async def handle(request: Request) -> Response:
         match = route_table.match(request.method, request.url.path)
-        assert match is not None
+        if match is None:
+            return await _error_response(error_handler, AdapterError("not_found", 404, "not found"), request)
 
         context: ContextT = await _resolve_context(context_provider, request)
         auth: AuthT = await _resolve_auth(auth_provider, match.route, request, context)
@@ -50,17 +57,31 @@ def build_fastapi_router(
         if isinstance(enforcement, RouteResponse):
             return _to_fastapi_response(enforcement)
         if enforcement is False:
-            return _to_fastapi_response(RouteResponse.json({"detail": "forbidden"}, status=403))
+            return await _error_response(error_handler, AdapterError("forbidden", 403, "forbidden"), request)
 
         try:
-            route_request = await _to_route_request(request, match.route, match.path_params, context, auth)
+            route_request = await _to_route_request(
+                request, match.route, match.path_params, context, auth, max_body_bytes=max_body_bytes
+            )
         except _InvalidJSON as exc:
-            return _to_fastapi_response(RouteResponse.json({"detail": str(exc)}, status=400))
-        route_response = await match.route.handler(route_request)
+            return await _error_response(error_handler, AdapterError("bad_request", 400, str(exc)), request)
+        except _BodyTooLarge as exc:
+            return await _error_response(error_handler, AdapterError("body_too_large", 413, str(exc)), request)
+        try:
+            route_response = await match.route.handler(route_request)
+        except Exception as exc:
+            return await _error_response(error_handler, AdapterError("exception", 500, str(exc), exc), request)
         return _to_fastapi_response(route_response)
 
     for route in route_table.routes:
         router.add_api_route(route.route.path, handle, methods=[route.route.method])
+    if error_handler is not None:
+        router.add_api_route(
+            "/{routedef_path:path}",
+            handle,
+            methods=list(COMMON_METHODS),
+            include_in_schema=False,
+        )
 
     return router
 
@@ -109,8 +130,12 @@ async def _to_route_request(
     path_params: Mapping[str, str],
     context: ContextT,
     auth: AuthT,
+    *,
+    max_body_bytes: int | None,
 ) -> RouteRequest[AuthT, ContextT]:
     raw_body = await request.body()
+    if max_body_bytes is not None and len(raw_body) > max_body_bytes:
+        raise _BodyTooLarge("request body is too large")
     try:
         body = decode_json_body(raw_body) if raw_body and _is_json_request(request) else None
     except BadRequestBody as exc:
@@ -145,5 +170,15 @@ def _to_fastapi_response(response: RouteResponse) -> Response:
     )
 
 
+async def _error_response(error_handler: ErrorHandler | None, error: AdapterError, request: Request) -> Response:
+    if error_handler is None:
+        return _to_fastapi_response(RouteResponse.json({"detail": error.message}, status=error.status))
+    return _to_fastapi_response(await _resolve(error_handler(error, request)))
+
+
 class _InvalidJSON(Exception):
+    pass
+
+
+class _BodyTooLarge(Exception):
     pass

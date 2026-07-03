@@ -71,6 +71,18 @@ def test_route_table_rejects_duplicate_method_and_path() -> None:
     assert str(exc_info.value) == "route table contains duplicate route GET /v1/items/{id}"
 
 
+def test_route_table_rejects_duplicate_route_names() -> None:
+    with pytest.raises(RouteConfigError) as exc_info:
+        RouteTable(
+            [
+                RouteDef("GET", "/v1/items", echo, name="items"),
+                RouteDef("POST", "/v1/items", fallback, name="items"),
+            ]
+        )
+
+    assert str(exc_info.value) == "route table contains duplicate route name 'items'"
+
+
 def test_route_match_exposes_route_and_read_only_path_params() -> None:
     route = RouteDef("GET", "/v1/{org}/items/{id}", echo)
     table = RouteTable([route])

@@ -26,6 +26,7 @@ packages = ["src/routedef"]
 include = [
     "/.gitignore",
     "/.ci",
+    "/.github",
     "/.pre-commit-config.yaml",
     "/.secrets.baseline",
     "/LICENSE",

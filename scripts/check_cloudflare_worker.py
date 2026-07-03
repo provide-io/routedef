@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import socket
 import subprocess
@@ -19,6 +20,17 @@ from pathlib import Path
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 0
 STARTUP_TIMEOUT_SECONDS = 60.0
+
+
+def subprocess_path() -> str:
+    act_node_bins = tuple(sorted(Path("/opt/acttoolcache/node").glob("*/*/bin"), reverse=True))
+    if act_node_bins:
+        return os.pathsep.join((*(str(path) for path in act_node_bins), os.environ["PATH"]))
+    return os.environ["PATH"]
+
+
+def subprocess_env() -> dict[str, str]:
+    return os.environ | {"MALLOC_CONF": "trust_madvise:false", "PATH": subprocess_path()}
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,13 +85,48 @@ def materialize_project(paths: IntegrationPaths, destination: Path) -> Path:
 
 
 def require_executable(name: str) -> str:
-    executable = shutil.which(name)
+    executable = shutil.which(name, path=subprocess_path())
     if executable is None:
         raise RuntimeError(f"{name} is required to run the Cloudflare Worker integration")
     return executable
 
 
-def run_sync(project_root: Path) -> None:
+def create_uv_wrapper(project_root: Path) -> dict[str, str]:
+    real_uv = require_executable("uv")
+    bin_dir = project_root / ".routedef-bin"
+    bin_dir.mkdir()
+    wrapper = bin_dir / "uv"
+    wrapper.write_text(
+        "\n".join(
+            (
+                "#!/usr/bin/env python3",
+                "import subprocess",
+                "import sys",
+                f"REAL_UV = {real_uv!r}",
+                "",
+                "if len(sys.argv) > 1 and sys.argv[1] == '--version':",
+                "    result = subprocess.run([REAL_UV, *sys.argv[1:]], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)",
+                "    lines = (",
+                "        line",
+                "        for line in result.stdout.splitlines()",
+                "        if 'MADV_DONTNEED' not in line and 'expected behaviour if you are running under QEMU' not in line",
+                "    )",
+                "    output = '\\n'.join(lines)",
+                "    if output:",
+                "        print(output)",
+                "    raise SystemExit(result.returncode)",
+                "",
+                "raise SystemExit(subprocess.call([REAL_UV, *sys.argv[1:]]))",
+                "",
+            )
+        )
+    )
+    wrapper.chmod(0o755)
+    env = subprocess_env()
+    return env | {"PATH": f"{bin_dir}{os.pathsep}{env['PATH']}"}
+
+
+def run_sync(project_root: Path, env: dict[str, str]) -> None:
     result = subprocess.run(  # noqa: S603
         [require_executable("uvx"), "--from", "workers-py", "pywrangler", "sync"],
         cwd=project_root,
@@ -87,6 +134,7 @@ def run_sync(project_root: Path) -> None:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
+        env=env,
     )
     if result.returncode != 0:
         print(result.stdout, file=sys.stderr)
@@ -134,19 +182,27 @@ def run_integration(root: Path, tmp_root: Path, *, host: str, port: int) -> None
     project_root = materialize_project(integration_paths(root), tmp_root)
     port = choose_port(host, port)
     base_url = f"http://{host}:{port}"
-    run_sync(project_root)
+    env = create_uv_wrapper(project_root)
+    run_sync(project_root, env)
     command = [require_executable("npx"), "--yes", "wrangler@latest", "dev", "--ip", host, "--port", str(port)]
+    output_path = project_root / "wrangler-dev.log"
+    output_file = output_path.open("w+", encoding="utf-8")
     process = subprocess.Popen(  # noqa: S603
         command,
         cwd=project_root,
-        stdout=subprocess.PIPE,
+        stdout=output_file,
         stderr=subprocess.STDOUT,
         text=True,
+        env=env,
     )
+    failed = False
     try:
         wait_for_worker(base_url, process)
         for probe in probe_requests(base_url):
             run_probe(probe)
+    except BaseException:
+        failed = True
+        raise
     finally:
         process.terminate()
         try:
@@ -154,10 +210,12 @@ def run_integration(root: Path, tmp_root: Path, *, host: str, port: int) -> None
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait(timeout=10.0)
-        if process.stdout is not None:
-            output = process.stdout.read()
-            if process.returncode not in (0, -15, 143):
-                print(output, file=sys.stderr)
+        output_file.flush()
+        output_file.seek(0)
+        output = output_file.read()
+        output_file.close()
+        if failed or process.returncode not in (0, -15, 143):
+            print(output, file=sys.stderr)
 
 
 def parse_args(argv: tuple[str, ...]) -> argparse.Namespace:

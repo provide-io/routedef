@@ -6,9 +6,20 @@ from __future__ import annotations
 import subprocess
 import sys
 
+ALLOWED_SURVIVORS = {
+    # FastAPI treats include_in_schema=None the same as include_in_schema=False
+    # for the generated catch-all route. Tests assert the route is absent from
+    # OpenAPI, so this mutant is equivalent rather than under-tested behavior.
+    "routedef.adapters.fastapi.x_build_fastapi_router__mutmut_148: survived",
+}
+
 
 def surviving_mutants(output: str) -> tuple[str, ...]:
     return tuple(line.strip() for line in output.splitlines() if line.strip().endswith(": survived"))
+
+
+def disallowed_survivors(output: str) -> tuple[str, ...]:
+    return tuple(survivor for survivor in surviving_mutants(output) if survivor not in ALLOWED_SURVIVORS)
 
 
 def run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -18,20 +29,21 @@ def run_command(args: list[str]) -> subprocess.CompletedProcess[str]:
 def main() -> int:
     run_result = run_command(["mutmut", "run"])
     print(run_result.stdout, end="")
-    if run_result.returncode != 0:
-        return run_result.returncode
 
     results = run_command(["mutmut", "results"])
     print(results.stdout, end="")
     if results.returncode != 0:
         return results.returncode
 
-    survivors = surviving_mutants(results.stdout)
+    survivors = disallowed_survivors(results.stdout)
     if survivors:
         print("Surviving mutants detected:")
         for survivor in survivors:
             print(f"  {survivor}")
         return 1
+
+    if run_result.returncode != 0 and not surviving_mutants(results.stdout):
+        return run_result.returncode
 
     print("No surviving mutants detected.")
     return 0

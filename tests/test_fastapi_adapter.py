@@ -11,7 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 from routedef import JSONValue, RouteDef, RouteRequest, RouteResponse
-from routedef.adapters.fastapi import build_fastapi_router
+from routedef.adapters.fastapi import AdapterError, build_fastapi_router
 
 
 def client_for(routes: list[RouteDef[object, object]]) -> TestClient:
@@ -104,6 +104,98 @@ def test_fastapi_adapter_returns_400_for_invalid_json() -> None:
 
     assert response.status_code == 400
     assert response.json() == {"detail": "request body is not valid JSON"}
+
+
+def test_fastapi_adapter_limits_request_body_size() -> None:
+    app = FastAPI()
+    app.include_router(build_fastapi_router([RouteDef("POST", "/v1/items", echo_json)], max_body_bytes=4))
+    client = TestClient(app)
+
+    response = client.post("/v1/items", content=b"12345", headers={"content-type": "application/json"})
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "request body is too large"}
+
+
+def test_fastapi_adapter_allows_body_at_size_limit() -> None:
+    app = FastAPI()
+    app.include_router(build_fastapi_router([RouteDef("POST", "/v1/items", echo_json)], max_body_bytes=2))
+    client = TestClient(app)
+
+    response = client.post("/v1/items", content=b"{}", headers={"content-type": "application/json"})
+
+    assert response.status_code == 200
+    assert response.json() == {"body": {}, "raw_body": "{}"}
+
+
+def test_fastapi_adapter_uses_error_handler_for_body_too_large() -> None:
+    def error_handler(error: AdapterError, request: Request) -> RouteResponse:
+        return RouteResponse.json(
+            {"kind": error.kind, "status": error.status, "message": error.message, "path": request.url.path},
+            status=499,
+        )
+
+    app = FastAPI()
+    app.include_router(
+        build_fastapi_router([RouteDef("POST", "/v1/items", echo_json)], error_handler=error_handler, max_body_bytes=1)
+    )
+    client = TestClient(app)
+
+    response = client.post("/v1/items", content=b"{}", headers={"content-type": "application/json"})
+
+    assert response.status_code == 499
+    assert response.json() == {
+        "kind": "body_too_large",
+        "status": 413,
+        "message": "request body is too large",
+        "path": "/v1/items",
+    }
+
+
+def test_fastapi_adapter_uses_error_handler_for_bad_body_and_exceptions() -> None:
+    async def broken(request: RouteRequest[object, object]) -> RouteResponse:
+        raise ValueError("boom")
+
+    def error_handler(error: AdapterError, request: Request) -> RouteResponse:
+        return RouteResponse.json(
+            {
+                "exception": type(error.exception).__name__ if error.exception is not None else None,
+                "kind": error.kind,
+                "message": error.message,
+                "path": request.url.path,
+                "status": error.status,
+            },
+            status=499,
+        )
+
+    app = FastAPI()
+    app.include_router(
+        build_fastapi_router(
+            [RouteDef("POST", "/v1/items", echo_json), RouteDef("GET", "/v1/broken", broken)],
+            error_handler=error_handler,
+        )
+    )
+    client = TestClient(app, raise_server_exceptions=False)
+
+    bad_body = client.post("/v1/items", content=b"{bad", headers={"content-type": "application/json"})
+    broken_response = client.get("/v1/broken")
+
+    assert bad_body.status_code == 499
+    assert bad_body.json() == {
+        "exception": None,
+        "kind": "bad_request",
+        "message": "request body is not valid JSON",
+        "path": "/v1/items",
+        "status": 400,
+    }
+    assert broken_response.status_code == 499
+    assert broken_response.json() == {
+        "exception": "ValueError",
+        "kind": "exception",
+        "message": "boom",
+        "path": "/v1/broken",
+        "status": 500,
+    }
 
 
 def test_fastapi_adapter_returns_bytes_response() -> None:
@@ -209,6 +301,35 @@ def test_fastapi_adapter_denies_enforcer_false_with_403() -> None:
 
     assert response.status_code == 403
     assert response.json() == {"detail": "forbidden"}
+
+
+def test_fastapi_adapter_uses_error_handler_for_forbidden_and_not_found() -> None:
+    def error_handler(error: AdapterError, request: Request) -> RouteResponse:
+        return RouteResponse.json(
+            {"kind": error.kind, "message": error.message, "status": error.status, "path": request.url.path}, status=499
+        )
+
+    app = FastAPI()
+    app.include_router(
+        build_fastapi_router(
+            [RouteDef("GET", "/v1/denied", echo_query)],
+            enforcer=lambda route, request, context, auth: False,
+            error_handler=error_handler,
+        )
+    )
+    client = TestClient(app)
+
+    denied = client.get("/v1/denied", headers={"x-trace": "abc"})
+    missing = client.get("/v1/missing")
+    missing_post = client.post("/v1/missing")
+
+    assert denied.status_code == 499
+    assert denied.json() == {"kind": "forbidden", "message": "forbidden", "status": 403, "path": "/v1/denied"}
+    assert missing.status_code == 499
+    assert missing.json() == {"kind": "not_found", "message": "not found", "status": 404, "path": "/v1/missing"}
+    assert missing_post.status_code == 499
+    assert missing_post.json() == {"kind": "not_found", "message": "not found", "status": 404, "path": "/v1/missing"}
+    assert "/{routedef_path}" not in app.openapi()["paths"]
 
 
 def test_fastapi_adapter_uses_enforcer_response() -> None:

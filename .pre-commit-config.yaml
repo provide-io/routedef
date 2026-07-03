@@ -115,3 +115,11 @@ repos:
         pass_filenames: false
         always_run: true
         stages: [manual]
+
+      - id: build-install-smoke
+        name: build and install smoke (manual)
+        entry: uv run python scripts/check_build_install.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [manual]

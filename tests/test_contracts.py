@@ -22,6 +22,7 @@ def test_route_method_normalizes_to_uppercase() -> None:
     route = RouteDef("get", "/v1/items/{id}", echo)
 
     assert route.method == "GET"
+    assert route.name is None
 
 
 @pytest.mark.parametrize("method", ["", "   "])
@@ -47,6 +48,13 @@ def test_route_rejects_path_without_leading_slash() -> None:
     assert str(exc_info.value) == "route path must start with '/'"
 
 
+def test_route_rejects_empty_name() -> None:
+    with pytest.raises(RouteConfigError) as exc_info:
+        RouteDef("GET", "/v1/items/{id}", echo, name=" ")
+
+    assert str(exc_info.value) == "route name must not be empty"
+
+
 def test_route_is_immutable_and_metadata_is_read_only() -> None:
     metadata_source = {"roles": ("admin",), "retry": True}
     route = RouteDef("GET", "/v1/items/{id}", echo, metadata=metadata_source)
@@ -60,6 +68,33 @@ def test_route_is_immutable_and_metadata_is_read_only() -> None:
 
     assert route.metadata["roles"] == ("admin",)
     assert route.metadata["retry"] is True
+
+
+def test_route_path_for_expands_encoded_params() -> None:
+    route = RouteDef("GET", "/v1/accounts/{account_id}/items/{item_id}", echo, name="item-detail")
+
+    assert route.path_for(account_id="acct 1", item_id="desk/chair") == "/v1/accounts/acct%201/items/desk%2Fchair"
+
+
+def test_route_path_for_rejects_missing_params() -> None:
+    route = RouteDef("GET", "/v1/items/{id}", echo)
+
+    with pytest.raises(RouteConfigError, match="missing path params"):
+        route.path_for()
+
+
+def test_route_path_for_rejects_unknown_params() -> None:
+    route = RouteDef("GET", "/v1/items/{id}", echo)
+
+    with pytest.raises(RouteConfigError, match="unknown path params"):
+        route.path_for(id="7", extra="ignored")
+
+
+def test_route_path_for_rejects_slashes_when_not_encoded() -> None:
+    route = RouteDef("GET", "/v1/items/{id}", echo)
+
+    with pytest.raises(RouteConfigError, match="must not contain '/'"):
+        route.path_for(encode=False, id="desk/chair")
 
 
 def test_route_metadata_nested_values_are_deeply_snapshotted() -> None:

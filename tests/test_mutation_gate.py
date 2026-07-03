@@ -29,3 +29,14 @@ def test_surviving_mutants_parses_only_survivors() -> None:
         "routedef.version.x_load_version__mutmut_1: survived",
         "routedef.version.x_load_version__mutmut_3: survived",
     )
+
+
+def test_disallowed_survivors_ignores_documented_equivalents() -> None:
+    mutation_gate = load_mutation_gate()
+
+    output = """
+        routedef.adapters.fastapi.x_build_fastapi_router__mutmut_148: survived
+        routedef.version.x_load_version__mutmut_3: survived
+    """
+
+    assert mutation_gate.disallowed_survivors(output) == ("routedef.version.x_load_version__mutmut_3: survived",)

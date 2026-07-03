@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "feature/**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  UV_FROZEN: "0"
+  UV_LINK_MODE: copy
+
+jobs:
+  quality:
+    name: Quality (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Prepare git metadata for act
+        if: ${{ env.ACT == 'true' }}
+        run: |
+          rm -rf .git
+          git init
+          git config user.email "act@example.invalid"
+          git config user.name "act"
+          git add .
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Python
+        run: |
+          uv python install ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --python ${{ matrix.python-version }} --all-extras --dev
+
+      - name: Run pre-commit
+        run: uv run pre-commit run --all-files
+
+      - name: Run coverage gate
+        run: uv run pytest -q --cov=src/routedef --cov-branch --cov-report=term-missing --cov-fail-under=100
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Python
+        run: |
+          uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --python 3.13 --all-extras --dev
+
+      - name: Build and smoke-test wheel
+        run: uv run python scripts/check_build_install.py
+
+  cloudflare-worker:
+    name: Cloudflare Worker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Python
+        run: |
+          uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --python 3.13 --all-extras --dev
+
+      - name: Run Cloudflare Python Worker integration
+        run: uv run python scripts/check_cloudflare_worker.py
+
+  mutation:
+    name: Mutation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Python
+        run: |
+          uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --python 3.13 --all-extras --dev
+
+      - name: Run mutation gate
+        run: uv run python scripts/mutation_gate.py

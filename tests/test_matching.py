@@ -3,7 +3,7 @@
 
 import pytest
 
-from routedef import CompiledPath, RouteConfigError, compile_path_template, match_path
+from routedef import CompiledPath, RouteConfigError, compile_path_template, expand_path_template, match_path
 
 
 def test_static_path_matches_exactly() -> None:
@@ -58,6 +58,24 @@ def test_path_params_are_url_decoded_without_crossing_slashes() -> None:
     compiled = compile_path_template("/v1/files/{name}")
     assert match_path(compiled, "/v1/files/a%20b.txt") == {"name": "a b.txt"}
     assert match_path(compiled, "/v1/files/a/b") is None
+
+
+def test_path_expansion_can_skip_encoding_without_slash() -> None:
+    assert expand_path_template("/v1/files/{name}", {"name": "a b.txt"}, encode=False) == "/v1/files/a b.txt"
+
+
+def test_path_expansion_encodes_reserved_characters_by_default() -> None:
+    assert expand_path_template("/v1/files/{name}", {"name": "a/b?c"}) == "/v1/files/a%2Fb%3Fc"
+
+
+def test_path_expansion_reports_sorted_missing_and_unknown_params() -> None:
+    with pytest.raises(RouteConfigError) as missing:
+        expand_path_template("/v1/{account_id}/items/{item_id}", {})
+    with pytest.raises(RouteConfigError) as unknown:
+        expand_path_template("/v1/{item_id}", {"account_id": "a", "extra": "x", "item_id": "i"})
+
+    assert str(missing.value) == "missing path params: account_id, item_id"
+    assert str(unknown.value) == "unknown path params: account_id, extra"
 
 
 def test_matching_is_method_independent() -> None:

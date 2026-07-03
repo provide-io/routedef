@@ -5,6 +5,7 @@ path = [
     ".ci/max-loc-baseline.json",
     ".ci/mutation-baseline.json",
     ".ci/xenon-baseline.json",
+    ".github/workflows/ci.yml",
     ".gitignore",
     ".pre-commit-config.yaml",
     ".secrets.baseline",

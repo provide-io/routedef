@@ -9,6 +9,7 @@ from importlib import import_module
 from typing import Generic, Protocol, SupportsBytes, TypeAlias, TypeVar, cast, runtime_checkable
 from urllib.parse import urlsplit
 
+from routedef.adapters.errors import AdapterError
 from routedef.contracts import RouteDef, RouteRequest, RouteResponse
 from routedef.errors import BadRequestBody
 from routedef.headers import get_header, normalize_headers
@@ -25,6 +26,7 @@ ContextProvider = Callable[["CloudflareRequest"], MaybeAwaitable[ContextT]]
 AuthProvider = Callable[[RouteDef[AuthT, ContextT], "CloudflareRequest", ContextT], MaybeAwaitable[AuthT]]
 EnforcerResult = None | bool | RouteResponse
 Enforcer = Callable[[RouteDef[AuthT, ContextT], "CloudflareRequest", ContextT, AuthT], MaybeAwaitable[EnforcerResult]]
+ErrorHandler = Callable[[AdapterError, "CloudflareRequest"], MaybeAwaitable[RouteResponse]]
 ArrayBufferBody: TypeAlias = bytes | bytearray | memoryview
 ArrayBufferProxyBody: TypeAlias = ArrayBufferBody | Iterable[int] | SupportsBytes
 HeaderPair: TypeAlias = tuple[str, str]
@@ -54,6 +56,7 @@ LOOKUP_HEADER_NAMES: tuple[str, ...] = (
     "x-forwarded-proto",
     "x-real-ip",
 )
+__all__ = ("AdapterError", "CloudflareDispatcher", "CloudflareRequest")
 
 
 @runtime_checkable
@@ -104,17 +107,21 @@ class CloudflareDispatcher(Generic[AuthT, ContextT]):
         context_provider: ContextProvider[ContextT] | None = None,
         auth_provider: AuthProvider[AuthT, ContextT] | None = None,
         enforcer: Enforcer[AuthT, ContextT] | None = None,
+        error_handler: ErrorHandler | None = None,
+        max_body_bytes: int | None = None,
     ) -> None:
         self._route_table = route_table
         self._context_provider = context_provider
         self._auth_provider = auth_provider
         self._enforcer = enforcer
+        self._error_handler = error_handler
+        self._max_body_bytes = max_body_bytes
 
     async def dispatch(self, request: CloudflareRequest) -> object:
         url = urlsplit(request.url)
         match = self._route_table.match(request.method, url.path)
         if match is None:
-            return _to_cloudflare_response(RouteResponse.json({"detail": "not found"}, status=404))
+            return await self._error_response(AdapterError("not_found", 404, "not found"), request)
 
         context: ContextT = await self._resolve_context(request)
         auth: AuthT = await self._resolve_auth(match.route, request, context)
@@ -122,13 +129,20 @@ class CloudflareDispatcher(Generic[AuthT, ContextT]):
         if isinstance(enforcement, RouteResponse):
             return _to_cloudflare_response(enforcement)
         if enforcement is False:
-            return _to_cloudflare_response(RouteResponse.json({"detail": "forbidden"}, status=403))
+            return await self._error_response(AdapterError("forbidden", 403, "forbidden"), request)
 
         try:
-            route_request = await _to_route_request(request, match.route, match.path_params, context, auth)
+            route_request = await _to_route_request(
+                request, match.route, match.path_params, context, auth, max_body_bytes=self._max_body_bytes
+            )
         except _InvalidBody as exc:
-            return _to_cloudflare_response(RouteResponse.json({"detail": str(exc)}, status=400))
-        route_response = await match.route.handler(route_request)
+            return await self._error_response(AdapterError("bad_request", 400, str(exc)), request)
+        except _BodyTooLarge as exc:
+            return await self._error_response(AdapterError("body_too_large", 413, str(exc)), request)
+        try:
+            route_response = await match.route.handler(route_request)
+        except Exception as exc:
+            return await self._error_response(AdapterError("exception", 500, str(exc), exc), request)
         return _to_cloudflare_response(route_response)
 
     async def _resolve_context(self, request: CloudflareRequest) -> ContextT:
@@ -157,6 +171,11 @@ class CloudflareDispatcher(Generic[AuthT, ContextT]):
             return None
         return await _resolve(self._enforcer(route, request, context, auth))
 
+    async def _error_response(self, error: AdapterError, request: CloudflareRequest) -> object:
+        if self._error_handler is None:
+            return _to_cloudflare_response(RouteResponse.json({"detail": error.message}, status=error.status))
+        return _to_cloudflare_response(await _resolve(self._error_handler(error, request)))
+
 
 async def _resolve(value: MaybeAwaitable[ValueT]) -> ValueT:
     if inspect.isawaitable(value):
@@ -170,10 +189,14 @@ async def _to_route_request(
     path_params: Mapping[str, str],
     context: ContextT,
     auth: AuthT,
+    *,
+    max_body_bytes: int | None,
 ) -> RouteRequest[AuthT, ContextT]:
     url = urlsplit(request.url)
     headers = _normalize_cloudflare_headers(request.headers)
     raw_body = await _read_raw_body(request)
+    if max_body_bytes is not None and len(raw_body) > max_body_bytes:
+        raise _BodyTooLarge("request body is too large")
     try:
         body = _decode_body(raw_body, headers)
     except BadRequestBody as exc:
@@ -286,4 +309,8 @@ def _to_cloudflare_response(response: RouteResponse) -> object:
 
 
 class _InvalidBody(Exception):
+    pass
+
+
+class _BodyTooLarge(Exception):
     pass

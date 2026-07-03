@@ -25,7 +25,7 @@ from cloudflare_fakes import (
 )
 
 from routedef import JSONValue, RouteDef, RouteRequest, RouteResponse, RouteTable
-from routedef.adapters.cloudflare import CloudflareDispatcher, CloudflareRequest
+from routedef.adapters.cloudflare import AdapterError, CloudflareDispatcher, CloudflareRequest
 
 AuthT = TypeVar("AuthT")
 ContextT = TypeVar("ContextT")
@@ -298,6 +298,60 @@ def test_cloudflare_dispatcher_returns_400_for_invalid_json() -> None:
     assert response_json(response) == {"detail": "request body is not valid JSON"}
 
 
+def test_cloudflare_dispatcher_limits_request_body_size() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/items", echo_request)]), max_body_bytes=4)
+
+    response = dispatch(
+        dispatcher,
+        FakeRequest(
+            "https://x.test/v1/items",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=b"12345",
+        ),
+    )
+
+    assert response.status == 413
+    assert response_json(response) == {"detail": "request body is too large"}
+
+
+def test_cloudflare_dispatcher_uses_error_handler_for_bad_body_and_exceptions() -> None:
+    async def broken(request: RouteRequest[object, object]) -> RouteResponse:
+        raise RuntimeError("boom")
+
+    def error_handler(error: AdapterError, request: CloudflareRequest) -> RouteResponse:
+        return RouteResponse.json({"kind": error.kind, "message": error.message, "url": request.url}, status=499)
+
+    dispatcher = CloudflareDispatcher(
+        RouteTable([RouteDef("POST", "/v1/items", echo_request), RouteDef("GET", "/v1/broken", broken)]),
+        error_handler=error_handler,
+    )
+
+    bad_body = dispatch(
+        dispatcher,
+        FakeRequest(
+            "https://x.test/v1/items",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=b"{bad",
+        ),
+    )
+    broken_response = dispatch(dispatcher, FakeRequest("https://x.test/v1/broken", method="GET"))
+
+    assert bad_body.status == 499
+    assert response_json(bad_body) == {
+        "kind": "bad_request",
+        "message": "request body is not valid JSON",
+        "url": "https://x.test/v1/items",
+    }
+    assert broken_response.status == 499
+    assert response_json(broken_response) == {
+        "kind": "exception",
+        "message": "boom",
+        "url": "https://x.test/v1/broken",
+    }
+
+
 def test_cloudflare_dispatcher_returns_404_for_no_match() -> None:
     dispatcher = CloudflareDispatcher(RouteTable([RouteDef("GET", "/v1/items", echo_request)]))
 
@@ -305,6 +359,25 @@ def test_cloudflare_dispatcher_returns_404_for_no_match() -> None:
 
     assert response.status == 404
     assert response_json(response) == {"detail": "not found"}
+
+
+def test_cloudflare_dispatcher_uses_error_handler_for_not_found_and_forbidden() -> None:
+    def error_handler(error: AdapterError, request: CloudflareRequest) -> RouteResponse:
+        return RouteResponse.json({"kind": error.kind, "status": error.status, "url": request.url}, status=499)
+
+    dispatcher = CloudflareDispatcher(
+        RouteTable([RouteDef("GET", "/v1/denied", echo_request)]),
+        enforcer=lambda route, request, context, auth: False,
+        error_handler=error_handler,
+    )
+
+    missing = dispatch(dispatcher, FakeRequest("https://x.test/v1/missing", method="GET"))
+    denied = dispatch(dispatcher, FakeRequest("https://x.test/v1/denied", method="GET"))
+
+    assert missing.status == 499
+    assert response_json(missing) == {"kind": "not_found", "status": 404, "url": "https://x.test/v1/missing"}
+    assert denied.status == 499
+    assert response_json(denied) == {"kind": "forbidden", "status": 403, "url": "https://x.test/v1/denied"}
 
 
 def test_cloudflare_dispatcher_denies_enforcer_false_with_403() -> None:

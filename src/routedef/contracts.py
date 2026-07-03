@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Generic, Protocol, TypeVar, cast
 
 from routedef.errors import RouteConfigError
+from routedef.matching import expand_path_template
 from routedef.types import JSONValue
 
 AuthT = TypeVar("AuthT")
@@ -30,6 +31,12 @@ def _validate_path(path: str) -> str:
     if not path.startswith("/"):
         raise RouteConfigError("route path must start with '/'")
     return path
+
+
+def _validate_name(name: str | None) -> str | None:
+    if name is not None and not name.strip():
+        raise RouteConfigError("route name must not be empty")
+    return name
 
 
 def _readonly_mapping(mapping: Mapping[str, ValueT]) -> Mapping[str, ValueT]:
@@ -85,11 +92,16 @@ class RouteDef(Generic[AuthT, ContextT]):
     path: str
     handler: RouteHandler[AuthT, ContextT]
     metadata: Mapping[str, object] = field(default_factory=dict)
+    name: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "method", _normalize_method(self.method))
         object.__setattr__(self, "path", _validate_path(self.path))
         object.__setattr__(self, "metadata", _readonly_mapping(self.metadata))
+        object.__setattr__(self, "name", _validate_name(self.name))
+
+    def path_for(self, *, encode: bool = True, **path_params: object) -> str:
+        return expand_path_template(self.path, path_params, encode=encode)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
