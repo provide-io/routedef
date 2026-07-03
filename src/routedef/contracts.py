@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Generic, Protocol, TypeVar, cast
 
 from routedef.errors import RouteConfigError
+from routedef.types import JSONValue
 
 AuthT = TypeVar("AuthT")
 ContextT = TypeVar("ContextT")
@@ -32,20 +33,27 @@ def _validate_path(path: str) -> str:
 
 
 def _readonly_mapping(mapping: Mapping[str, ValueT]) -> Mapping[str, ValueT]:
-    return MappingProxyType(dict(mapping))
+    return MappingProxyType({key: cast(ValueT, _deep_snapshot(value)) for key, value in mapping.items()})
 
 
-def _readonly_context(context: ContextT) -> ContextT:
-    if isinstance(context, Mapping):
-        snapshot = dict(cast(Mapping[object, object], context))
-        return cast(ContextT, MappingProxyType(snapshot))
-    return context
+def _deep_snapshot(value: object) -> object:
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _deep_snapshot(item) for key, item in value.items()})
+    if isinstance(value, list | tuple):
+        return tuple(_deep_snapshot(item) for item in value)
+    if isinstance(value, set | frozenset):
+        return frozenset(_deep_snapshot(item) for item in value)
+    return value
+
+
+def _normalized_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    return {name.lower(): value for name, value in headers.items()}
 
 
 def _headers_with_content_type(headers: Mapping[str, str], content_type: str | None) -> Mapping[str, str]:
-    normalized_headers = dict(headers)
-    if content_type is not None:
-        normalized_headers.setdefault("content-type", content_type)
+    normalized_headers = _normalized_headers(headers)
+    if content_type is not None and "content-type" not in normalized_headers:
+        normalized_headers["content-type"] = content_type
     return _readonly_mapping(normalized_headers)
 
 
@@ -86,7 +94,7 @@ class RouteRequest(Generic[AuthT, ContextT]):
         object.__setattr__(self, "path_params", _readonly_mapping(self.path_params))
         object.__setattr__(self, "query", _readonly_mapping(self.query))
         object.__setattr__(self, "headers", _readonly_mapping(self.headers))
-        object.__setattr__(self, "context", _readonly_context(self.context))
+        object.__setattr__(self, "body", _deep_snapshot(self.body))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -96,10 +104,11 @@ class RouteResponse:
     headers: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "headers", _readonly_mapping(self.headers))
+        object.__setattr__(self, "body", _deep_snapshot(self.body))
+        object.__setattr__(self, "headers", _readonly_mapping(_normalized_headers(self.headers)))
 
     @classmethod
-    def json(cls, body: object, *, status: int = 200, headers: Mapping[str, str] | None = None) -> RouteResponse:
+    def json(cls, body: JSONValue, *, status: int = 200, headers: Mapping[str, str] | None = None) -> RouteResponse:
         return cls(status=status, body=body, headers=_headers_with_content_type(headers or {}, "application/json"))
 
     @classmethod

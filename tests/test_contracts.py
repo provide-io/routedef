@@ -3,14 +3,11 @@
 
 import asyncio
 from collections.abc import Mapping
-from importlib.metadata import PackageNotFoundError
-from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from pytest import MonkeyPatch
 
-from routedef import RouteConfigError, RouteDef, RouteRequest, RouteResponse
+from routedef import JSONValue, RouteConfigError, RouteDef, RouteRequest, RouteResponse
 
 
 async def echo(request: RouteRequest[str, dict[str, object]]) -> RouteResponse:
@@ -50,6 +47,28 @@ def test_route_is_immutable_and_metadata_is_read_only() -> None:
     assert route.metadata["retry"] is True
 
 
+def test_route_metadata_nested_values_are_deeply_snapshotted() -> None:
+    metadata_source: dict[str, object] = {
+        "policy": {"roles": ["admin"], "flags": {"write"}},
+        "order": ("first", "second"),
+    }
+    route = RouteDef("GET", "/v1/items/{id}", echo, metadata=metadata_source)
+    cast(Any, metadata_source["policy"])["roles"].append("sysop")
+    cast(Any, metadata_source["policy"])["flags"].add("delete")
+
+    policy = cast(Mapping[str, object], route.metadata["policy"])
+    with pytest.raises(TypeError):
+        cast(Any, policy)["roles"] = ("guest",)
+    with pytest.raises(AttributeError):
+        cast(Any, policy["roles"]).append("guest")
+    with pytest.raises(AttributeError):
+        cast(Any, policy["flags"]).add("read")
+
+    assert policy["roles"] == ("admin",)
+    assert policy["flags"] == frozenset({"write"})
+    assert route.metadata["order"] == ("first", "second")
+
+
 def test_request_is_immutable_and_mapping_fields_are_read_only() -> None:
     path_params = {"id": "123"}
     query = {"q": "books"}
@@ -70,12 +89,13 @@ def test_request_is_immutable_and_mapping_fields_are_read_only() -> None:
     path_params["id"] = "999"
     query["q"] = "tables"
     headers["x-trace"] = "def"
+    original_context = request.context
     context["db"] = object()
 
     with pytest.raises(AttributeError):
         cast(Any, request).path = "/changed"
 
-    for field in (request.path_params, request.query, request.headers, request.context):
+    for field in (request.path_params, request.query, request.headers):
         assert isinstance(field, Mapping)
         with pytest.raises(TypeError):
             cast(Any, field)["new"] = "value"
@@ -84,20 +104,48 @@ def test_request_is_immutable_and_mapping_fields_are_read_only() -> None:
     assert request.path_params == {"id": "123"}
     assert request.query == {"q": "books"}
     assert request.headers == {"x-trace": "abc"}
-    assert tuple(request.context) == ("db",)
+    assert request.context is original_context
 
 
-def test_request_preserves_non_mapping_context() -> None:
-    context = object()
-    request = RouteRequest[None, object](
+def test_request_preserves_dict_context_runtime_type() -> None:
+    context: dict[str, object] = {"db": object()}
+    request = RouteRequest[str, dict[str, object]](
         method="GET",
         path="/v1/items",
         route_path="/v1/items",
-        auth=None,
+        auth="user-1",
         context=context,
     )
+    context["request_id"] = "abc"
 
     assert request.context is context
+    assert isinstance(request.context, dict)
+    assert request.context.get("request_id") == "abc"
+
+
+def test_request_body_nested_values_are_deeply_snapshotted() -> None:
+    body: dict[str, object] = {"item": {"tags": ["new"], "flags": {"featured"}}}
+    request = RouteRequest[None, object](
+        method="POST",
+        path="/v1/items",
+        route_path="/v1/items",
+        auth=None,
+        context=object(),
+        body=body,
+    )
+    cast(Any, body["item"])["tags"].append("sale")
+    cast(Any, body["item"])["flags"].add("archived")
+
+    item = cast(Mapping[str, object], cast(Mapping[str, object], request.body)["item"])
+    with pytest.raises(TypeError):
+        cast(Any, item)["tags"] = ("changed",)
+    with pytest.raises(AttributeError):
+        cast(Any, item["tags"]).append("changed")
+    with pytest.raises(AttributeError):
+        cast(Any, item["flags"]).add("changed")
+
+    assert item["tags"] == ("new",)
+    assert item["flags"] == frozenset({"featured"})
 
 
 def test_response_is_immutable_and_headers_are_read_only() -> None:
@@ -132,6 +180,23 @@ def test_response_constructors_create_expected_state() -> None:
     assert empty_response.headers == {"x-empty": "1"}
 
 
+def test_response_content_type_is_case_insensitive() -> None:
+    response = RouteResponse.json({"detail": "missing"}, headers={"Content-Type": "application/problem+json"})
+
+    assert response.headers == {"content-type": "application/problem+json"}
+    assert len(response.headers) == 1
+
+
+def test_json_constructor_accepts_json_value() -> None:
+    body: JSONValue = {"ok": True, "items": [{"id": 1}], "next": None}
+    response = RouteResponse.json(body)
+    response_body = cast(Mapping[str, object], response.body)
+
+    assert response_body["ok"] is True
+    assert response_body["items"] == ({"id": 1},)
+    assert response_body["next"] is None
+
+
 def test_route_handler_protocol_use() -> None:
     route = RouteDef("GET", "/v1/echo", echo)
     context: dict[str, object] = {"request_id": "abc"}
@@ -149,21 +214,3 @@ def test_route_handler_protocol_use() -> None:
     response: RouteResponse = asyncio.run(call_handler())
 
     assert response.body == {"auth": "token", "path": "/v1/echo"}
-
-
-def test_version_fallback_remains_covered_for_focused_contract_run(
-    monkeypatch: MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    import routedef.version as version_module
-
-    version_file = tmp_path / "VERSION"
-    version_file.write_text("9.8.7\n", encoding="utf-8")
-
-    def missing_metadata(_package_name: str) -> str:
-        raise PackageNotFoundError
-
-    monkeypatch.setattr(version_module, "_metadata_version", missing_metadata)
-    monkeypatch.setattr(version_module, "_VERSION_FILE", version_file)
-
-    assert version_module.load_version() == "9.8.7"
