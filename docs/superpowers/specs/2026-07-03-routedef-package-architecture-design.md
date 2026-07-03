@@ -62,26 +62,24 @@ routedef/
     test_matching.py
     test_table.py
     test_headers.py
+    test_request.py
+    test_response.py
     test_fastapi_adapter.py
     test_cloudflare_adapter.py
     test_undef_style.py
     test_uwarp_style.py
+    cloudflare_fakes.py
   scripts/
-    check_spdx_headers.py
-    check_max_loc.py
-    check_xenon.py
-    check_licenses.py
+    mutation_gate.py
   docs/
     architecture.md
     migration.md
     superpowers/
       specs/
         2026-07-03-routedef-package-architecture-design.md
-  .ci/
-    max-loc-baseline.json
-    xenon-baseline.json
-    mutation-baseline.json
 ```
+
+Task 9 will add release-gate scripts and `.ci` baselines. Until then, the only script is `scripts/mutation_gate.py`.
 
 No file may exceed 500 lines. If a file approaches the limit, split it into a package module with a clear name. Prefer modules and subpackages over large underscore-prefixed helper files.
 
