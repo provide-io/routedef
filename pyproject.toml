@@ -34,6 +34,7 @@ include = [
     "/REUSE.toml",
     "/VERSION",
     "/docs",
+    "/examples",
     "/pyproject.toml",
     "/scripts",
     "/src",
@@ -94,7 +95,7 @@ skip_covered = false
 
 [tool.mutmut]
 source_paths = ["src/routedef/"]
-also_copy = ["VERSION", "scripts"]
+also_copy = ["VERSION", "examples", "scripts"]
 pytest_add_cli_args = ["--override-ini=addopts=-q -p no:cacheprovider"]
 pytest_add_cli_args_test_selection = ["tests/"]
 

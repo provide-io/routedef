@@ -43,3 +43,18 @@ def test_package_version_falls_back_to_version_file(
 
     assert version_module.load_version() == "9.8.7"
     assert package_names == ["routedef"]
+
+
+def test_package_version_falls_back_to_constant_when_vendored(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import routedef.version as version_module
+
+    def missing_metadata(_package_name: str) -> str:
+        raise PackageNotFoundError
+
+    monkeypatch.setattr(version_module, "_metadata_version", missing_metadata)
+    monkeypatch.setattr(version_module, "_VERSION_FILE", tmp_path / "missing-version")
+
+    assert version_module.load_version() == "0.1.0"

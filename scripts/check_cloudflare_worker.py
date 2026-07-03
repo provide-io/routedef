@@ -1,0 +1,186 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
+# SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import argparse
+import json
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.request
+from dataclasses import dataclass
+from pathlib import Path
+
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 0
+STARTUP_TIMEOUT_SECONDS = 60.0
+
+
+@dataclass(frozen=True, slots=True)
+class IntegrationPaths:
+    root: Path
+    example_root: Path
+    entrypoint: Path
+    wrangler_config: Path
+
+
+@dataclass(frozen=True, slots=True)
+class Probe:
+    method: str
+    url: str
+    body: bytes | None
+    status: int
+    payload: dict[str, object]
+
+
+def integration_paths(root: Path) -> IntegrationPaths:
+    example_root = root / "examples" / "cloudflare-worker"
+    return IntegrationPaths(
+        root=root,
+        example_root=example_root,
+        entrypoint=example_root / "src" / "entry.py",
+        wrangler_config=example_root / "wrangler.jsonc",
+    )
+
+
+def probe_requests(base_url: str) -> tuple[Probe, ...]:
+    return (
+        Probe("GET", f"{base_url}/v1/items/7?q=desk", None, 200, {"id": "7", "q": "desk"}),
+        Probe("POST", f"{base_url}/v1/items", b'{"name":"desk"}', 201, {"name": "desk"}),
+        Probe("GET", f"{base_url}/missing", None, 404, {"detail": "not found"}),
+    )
+
+
+def choose_port(host: str, port: int) -> int:
+    if port != 0:
+        return port
+    with socket.socket() as sock:
+        sock.bind((host, 0))
+        return int(sock.getsockname()[1])
+
+
+def materialize_project(paths: IntegrationPaths, destination: Path) -> Path:
+    project_root = destination / "cloudflare-worker"
+    shutil.copytree(paths.example_root, project_root)
+    shutil.copytree(paths.root / "src" / "routedef", project_root / "src" / "routedef")
+    shutil.copy2(paths.root / "VERSION", project_root / "VERSION")
+    return project_root
+
+
+def require_executable(name: str) -> str:
+    executable = shutil.which(name)
+    if executable is None:
+        raise RuntimeError(f"{name} is required to run the Cloudflare Worker integration")
+    return executable
+
+
+def run_sync(project_root: Path) -> None:
+    result = subprocess.run(  # noqa: S603
+        [require_executable("uvx"), "--from", "workers-py", "pywrangler", "sync"],
+        cwd=project_root,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(result.stdout, file=sys.stderr)
+        raise RuntimeError("pywrangler sync failed")
+
+
+def wait_for_worker(base_url: str, process: subprocess.Popen[str]) -> None:
+    deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError("pywrangler dev exited before the Worker became reachable")
+        try:
+            urllib.request.urlopen(f"{base_url}/missing", timeout=1.0).close()  # noqa: S310  # nosec B310
+            return
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return
+        except (OSError, TimeoutError, urllib.error.URLError):
+            time.sleep(0.5)
+    raise TimeoutError(f"Worker did not become reachable at {base_url}")
+
+
+def run_probe(probe: Probe) -> None:
+    request = urllib.request.Request(  # noqa: S310
+        probe.url,
+        data=probe.body,
+        method=probe.method,
+        headers={"content-type": "application/json"} if probe.body is not None else {},
+    )
+    try:
+        response = urllib.request.urlopen(request, timeout=5.0)  # noqa: S310  # nosec B310
+        status = response.status
+        body = response.read()
+    except urllib.error.HTTPError as exc:
+        status = exc.code
+        body = exc.read()
+    if status != probe.status:
+        raise AssertionError(f"{probe.method} {probe.url} returned {status}, expected {probe.status}")
+    payload = json.loads(body)
+    if payload != probe.payload:
+        raise AssertionError(f"{probe.method} {probe.url} returned {payload!r}, expected {probe.payload!r}")
+
+
+def run_integration(root: Path, tmp_root: Path, *, host: str, port: int) -> None:
+    project_root = materialize_project(integration_paths(root), tmp_root)
+    port = choose_port(host, port)
+    base_url = f"http://{host}:{port}"
+    run_sync(project_root)
+    command = [require_executable("npx"), "--yes", "wrangler@latest", "dev", "--ip", host, "--port", str(port)]
+    process = subprocess.Popen(  # noqa: S603
+        command,
+        cwd=project_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    try:
+        wait_for_worker(base_url, process)
+        for probe in probe_requests(base_url):
+            run_probe(probe)
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=10.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=10.0)
+        if process.stdout is not None:
+            output = process.stdout.read()
+            if process.returncode not in (0, -15, 143):
+                print(output, file=sys.stderr)
+
+
+def parse_args(argv: tuple[str, ...]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run the Cloudflare Python Worker integration fixture.")
+    parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
+    parser.add_argument("--tmp-root", type=Path, default=Path(tempfile.gettempdir()) / "routedef-cloudflare-worker")
+    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    return parser.parse_args(argv)
+
+
+def main(argv: tuple[str, ...] | None = None) -> int:
+    args = parse_args(tuple(sys.argv[1:] if argv is None else argv))
+    tmp_root = args.tmp_root.resolve()
+    if tmp_root.exists():
+        shutil.rmtree(tmp_root)
+    tmp_root.mkdir(parents=True)
+    try:
+        run_integration(args.root.resolve(), tmp_root, host=args.host, port=args.port)
+    finally:
+        shutil.rmtree(tmp_root, ignore_errors=True)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

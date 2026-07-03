@@ -107,3 +107,11 @@ repos:
         always_run: true
         stages: [manual]
         types: [python]
+
+      - id: cloudflare-worker-integration
+        name: Cloudflare Python Worker integration (manual)
+        entry: uv run python scripts/check_cloudflare_worker.py
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [manual]

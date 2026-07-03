@@ -1,0 +1,50 @@
+' SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
+' SPDX-License-Identifier: Apache-2.0
+
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentStyle rectangle
+skinparam defaultFontName Helvetica
+
+title routedef Package Boundaries
+
+package "Application" {
+  [Route definitions]
+  [Auth policy]
+  [Runtime setup]
+}
+
+package "routedef core" {
+  [contracts]
+  [matching]
+  [table]
+  [request helpers]
+  [response helpers]
+}
+
+package "routedef adapters" {
+  [FastAPI adapter]
+  [Cloudflare dispatcher]
+}
+
+cloud "Host runtimes" {
+  [FastAPI]
+  [Cloudflare Python Workers]
+}
+
+[Route definitions] --> [contracts]
+[Route definitions] --> [table]
+[Auth policy] --> [Route definitions]
+[Runtime setup] --> [FastAPI adapter]
+[Runtime setup] --> [Cloudflare dispatcher]
+[FastAPI adapter] --> [FastAPI]
+[Cloudflare dispatcher] --> [Cloudflare Python Workers]
+[FastAPI adapter] --> [contracts]
+[Cloudflare dispatcher] --> [contracts]
+[table] --> [matching]
+[FastAPI adapter] --> [request helpers]
+[FastAPI adapter] --> [response helpers]
+[Cloudflare dispatcher] --> [request helpers]
+[Cloudflare dispatcher] --> [response helpers]
+@enduml

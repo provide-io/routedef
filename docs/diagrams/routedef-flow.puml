@@ -1,0 +1,31 @@
+' SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
+' SPDX-License-Identifier: Apache-2.0
+
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam defaultFontName Helvetica
+
+title routedef Request Flow
+
+actor Client
+participant "Runtime Adapter\n(FastAPI / Cloudflare)" as Adapter
+participant RouteTable
+participant "Context Provider" as Context
+participant "Auth Provider" as Auth
+participant Enforcer
+participant "Route Handler" as Handler
+
+Client -> Adapter: HTTP request
+Adapter -> RouteTable: match(method, path)
+RouteTable --> Adapter: RouteMatch(route, path_params)
+Adapter -> Context: resolve native request context
+Context --> Adapter: context
+Adapter -> Auth: resolve auth(route, request, context)
+Auth --> Adapter: auth
+Adapter -> Enforcer: enforce(route, request, context, auth)
+Enforcer --> Adapter: allow / deny / RouteResponse
+Adapter -> Handler: RouteRequest
+Handler --> Adapter: RouteResponse
+Adapter --> Client: native response
+@enduml
