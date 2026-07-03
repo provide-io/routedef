@@ -1,0 +1,346 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
+# SPDX-License-Identifier: Apache-2.0
+
+from __future__ import annotations
+
+import asyncio
+import json
+import sys
+from collections.abc import Mapping
+from types import ModuleType
+from typing import TypeVar, cast
+
+import pytest
+
+from routedef import JSONValue, RouteDef, RouteRequest, RouteResponse, RouteTable
+from routedef.adapters.cloudflare import CloudflareDispatcher, CloudflareRequest
+
+AuthT = TypeVar("AuthT")
+ContextT = TypeVar("ContextT")
+
+
+class FakeCloudflareResponse:
+    def __init__(self, body: bytes, *, status: int = 200, headers: Mapping[str, str] | None = None) -> None:
+        self.body = body
+        self.status = status
+        self.headers = dict(headers or {})
+
+
+class FakeRequest:
+    def __init__(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        headers: Mapping[str, str] | None = None,
+        body: bytes = b"",
+    ) -> None:
+        self.url = url
+        self.method = method
+        self.headers: Mapping[str, str] = dict(headers or {})
+        self.body = body
+        self.array_buffer_reads = 0
+
+    async def arrayBuffer(self) -> bytearray:
+        self.array_buffer_reads += 1
+        return bytearray(self.body)
+
+
+class FakeTextRequest:
+    def __init__(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        headers: Mapping[str, str] | None = None,
+        body: str = "",
+    ) -> None:
+        self.url = url
+        self.method = method
+        self.headers: Mapping[str, str] = dict(headers or {})
+        self.body = body
+        self.text_reads = 0
+
+    async def text(self) -> str:
+        self.text_reads += 1
+        return self.body
+
+
+class FakeEmptyRequest:
+    def __init__(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
+        self.url = url
+        self.method = method
+        self.headers: Mapping[str, str] = dict(headers or {})
+
+
+@pytest.fixture(autouse=True)
+def workers_module(monkeypatch: pytest.MonkeyPatch) -> None:
+    module = ModuleType("workers")
+    module.__dict__["Response"] = FakeCloudflareResponse
+    monkeypatch.setitem(sys.modules, "workers", module)
+
+
+async def echo_request(request: RouteRequest[object, object]) -> RouteResponse:
+    return RouteResponse.json(
+        cast(
+            JSONValue,
+            {
+                "method": request.method,
+                "path": request.path,
+                "route_path": request.route_path,
+                "path_params": dict(request.path_params),
+                "query": dict(request.query),
+                "headers": dict(request.headers),
+                "body": request.body,
+                "raw_body": request.raw_body.decode(),
+                "auth": request.auth,
+                "context": request.context,
+            },
+        )
+    )
+
+
+def dispatch(
+    dispatcher: CloudflareDispatcher[AuthT, ContextT],
+    request: CloudflareRequest,
+) -> FakeCloudflareResponse:
+    return cast(FakeCloudflareResponse, asyncio.run(dispatcher.dispatch(request)))
+
+
+def response_json(response: FakeCloudflareResponse) -> dict[str, object]:
+    return cast(dict[str, object], json.loads(response.body))
+
+
+def test_cloudflare_dispatcher_dispatches_with_context_and_auth() -> None:
+    async def handler(request: RouteRequest[str, dict[str, str]]) -> RouteResponse:
+        return RouteResponse.json({"auth": request.auth, "runtime": request.context["runtime"]})
+
+    dispatcher = CloudflareDispatcher(
+        RouteTable([RouteDef("GET", "/v1/items/{id}", handler)]),
+        context_provider=lambda request: {"runtime": "cf"},
+        auth_provider=lambda route, request, context: "user",
+    )
+
+    response = cast(
+        FakeCloudflareResponse,
+        asyncio.run(dispatcher.dispatch(FakeRequest("https://x.test/v1/items/7", method="GET"))),
+    )
+
+    assert response.status == 200
+    assert response_json(response) == {"auth": "user", "runtime": "cf"}
+
+
+def test_cloudflare_dispatcher_handles_json_body() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/items", echo_request)]))
+
+    response = dispatch(
+        dispatcher,
+        FakeRequest(
+            "https://x.test/v1/items",
+            method="POST",
+            headers={"Content-Type": "application/json"},
+            body=b'{"name":"desk"}',
+        ),
+    )
+
+    assert response.status == 200
+    assert response_json(response)["body"] == {"name": "desk"}
+    assert response_json(response)["raw_body"] == '{"name":"desk"}'
+
+
+def test_cloudflare_dispatcher_handles_request_without_body_reader() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/items", echo_request)]))
+
+    response = dispatch(dispatcher, FakeEmptyRequest("https://x.test/v1/items", method="POST"))
+
+    assert response.status == 200
+    assert response_json(response)["body"] is None
+    assert response_json(response)["raw_body"] == ""
+
+
+def test_cloudflare_dispatcher_handles_text_body_from_text_reader() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/notes", echo_request)]))
+    request = FakeTextRequest(
+        "https://x.test/v1/notes",
+        method="POST",
+        headers={"Content-Type": "text/plain; charset=utf-8"},
+        body="hello",
+    )
+
+    response = dispatch(dispatcher, request)
+
+    assert request.text_reads == 1
+    assert response.status == 200
+    assert response_json(response)["body"] == "hello"
+    assert response_json(response)["raw_body"] == "hello"
+
+
+def test_cloudflare_dispatcher_preserves_raw_binary_body_without_decoding() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/blob", echo_request)]))
+
+    response = dispatch(
+        dispatcher,
+        FakeRequest(
+            "https://x.test/v1/blob",
+            method="POST",
+            headers={"Content-Type": "application/octet-stream"},
+            body=b"raw",
+        ),
+    )
+
+    assert response.status == 200
+    assert response_json(response)["body"] is None
+    assert response_json(response)["raw_body"] == "raw"
+
+
+def test_cloudflare_dispatcher_prefers_array_buffer_body_reader() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/items", echo_request)]))
+    request = FakeRequest(
+        "https://x.test/v1/items",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+        body=b'{"ok":true}',
+    )
+
+    response = dispatch(dispatcher, request)
+
+    assert request.array_buffer_reads == 1
+    assert response.status == 200
+    assert response_json(response)["body"] == {"ok": True}
+
+
+def test_cloudflare_dispatcher_handles_query_params() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("GET", "/v1/items/{id}", echo_request)]))
+
+    response = dispatch(dispatcher, FakeRequest("https://x.test/v1/items/7?q=books&empty=", method="GET"))
+
+    assert response.status == 200
+    assert response_json(response)["path"] == "/v1/items/7"
+    assert response_json(response)["route_path"] == "/v1/items/{id}"
+    assert response_json(response)["path_params"] == {"id": "7"}
+    assert response_json(response)["query"] == {"q": "books", "empty": ""}
+
+
+def test_cloudflare_dispatcher_normalizes_headers() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("GET", "/v1/headers", echo_request)]))
+
+    response = dispatch(
+        dispatcher,
+        FakeRequest(
+            "https://x.test/v1/headers", method="GET", headers={"X-Trace": "abc", "Content-Type": "text/plain"}
+        ),
+    )
+
+    assert response.status == 200
+    assert response_json(response)["headers"] == {"x-trace": "abc", "content-type": "text/plain"}
+
+
+def test_cloudflare_dispatcher_returns_400_for_invalid_json() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/items", echo_request)]))
+
+    response = dispatch(
+        dispatcher,
+        FakeRequest(
+            "https://x.test/v1/items",
+            method="POST",
+            headers={"Content-Type": "Application/JSON; charset=utf-8"},
+            body=b"{bad",
+        ),
+    )
+
+    assert response.status == 400
+    assert response_json(response) == {"detail": "request body is not valid JSON"}
+
+
+def test_cloudflare_dispatcher_returns_404_for_no_match() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("GET", "/v1/items", echo_request)]))
+
+    response = dispatch(dispatcher, FakeRequest("https://x.test/v1/missing", method="GET"))
+
+    assert response.status == 404
+    assert response_json(response) == {"detail": "not found"}
+
+
+def test_cloudflare_dispatcher_denies_enforcer_false_with_403() -> None:
+    dispatcher = CloudflareDispatcher(
+        RouteTable([RouteDef("GET", "/v1/denied", echo_request)]),
+        enforcer=lambda route, request, context, auth: False,
+    )
+
+    response = dispatch(dispatcher, FakeRequest("https://x.test/v1/denied", method="GET"))
+
+    assert response.status == 403
+    assert response_json(response) == {"detail": "forbidden"}
+
+
+def test_cloudflare_dispatcher_supports_async_callbacks() -> None:
+    async def handler(request: RouteRequest[str, dict[str, str]]) -> RouteResponse:
+        return RouteResponse.json({"auth": request.auth, "runtime": request.context["runtime"]})
+
+    async def context_provider(request: CloudflareRequest) -> dict[str, str]:
+        assert request.url == "https://x.test/v1/async"
+        return {"runtime": "cf"}
+
+    async def auth_provider(
+        route: RouteDef[str, dict[str, str]],
+        request: CloudflareRequest,
+        context: dict[str, str],
+    ) -> str:
+        assert route.path == "/v1/async"
+        assert request.url == "https://x.test/v1/async"
+        assert context == {"runtime": "cf"}
+        return f"{route.method}:{context['runtime']}"
+
+    async def enforcer(
+        route: RouteDef[str, dict[str, str]],
+        request: CloudflareRequest,
+        context: dict[str, str],
+        auth: str,
+    ) -> bool:
+        assert route.path == "/v1/async"
+        assert request.url == "https://x.test/v1/async"
+        assert context == {"runtime": "cf"}
+        return auth == "GET:cf"
+
+    dispatcher = CloudflareDispatcher(
+        RouteTable([RouteDef("GET", "/v1/async", handler)]),
+        context_provider=context_provider,
+        auth_provider=auth_provider,
+        enforcer=enforcer,
+    )
+
+    response = dispatch(dispatcher, FakeRequest("https://x.test/v1/async", method="GET"))
+
+    assert response.status == 200
+    assert response_json(response) == {"auth": "GET:cf", "runtime": "cf"}
+
+
+def test_cloudflare_dispatcher_uses_enforcer_response() -> None:
+    dispatcher = CloudflareDispatcher(
+        RouteTable([RouteDef("GET", "/v1/policy", echo_request)]),
+        enforcer=lambda route, request, context, auth: RouteResponse.json({"detail": "custom"}, status=401),
+    )
+
+    response = dispatch(dispatcher, FakeRequest("https://x.test/v1/policy", method="GET"))
+
+    assert response.status == 401
+    assert response_json(response) == {"detail": "custom"}
+
+
+def test_cloudflare_dispatcher_converts_route_response() -> None:
+    async def handler(request: RouteRequest[object, object]) -> RouteResponse:
+        return RouteResponse.text("created", status=201, headers={"X-Result": "yes"})
+
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/items", handler)]))
+
+    response = dispatch(dispatcher, FakeRequest("https://x.test/v1/items", method="POST"))
+
+    assert response.status == 201
+    assert response.body == b"created"
+    assert response.headers == {"x-result": "yes", "content-type": "text/plain; charset=utf-8"}
