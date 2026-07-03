@@ -119,7 +119,7 @@ App policy stays app-owned. `routedef` will expose typed callback points rather 
 - A context provider builds per-request app context.
 - An auth provider authenticates a raw runtime request for a route.
 - An enforcer applies route metadata and app-specific policy.
-- Body readers and error mappers may be overridden where runtimes need custom behavior.
+- Request body decoding and error mapping are owned by each runtime adapter. The first public adapter callback surface is limited to context providers, auth providers, and enforcers.
 
 The first version should keep route metadata simple and stable. A mapping-based metadata field is acceptable if public helpers preserve clear typing at adapter boundaries.
 

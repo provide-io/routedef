@@ -17,8 +17,8 @@
 - `LICENSE`, `REUSE.toml`, `.secrets.baseline`, `VERSION`, `README.md`: repo metadata.
 - `src/routedef/__init__.py`: public exports only; no feature logic.
 - `src/routedef/py.typed`: typed package marker.
-- `src/routedef/errors.py`: `RouteConfigError`, `RouteDispatchError`, `BadRequestBody`.
-- `src/routedef/types.py`: `AuthProvider`, `ContextProvider`, `Enforcer`, body-reader aliases.
+- `src/routedef/errors.py`: `RouteConfigError`, `BadRequestBody`.
+- `src/routedef/types.py`: `JSONValue`.
 - `src/routedef/contracts.py`: `RouteDef`, `RouteRequest`, `RouteResponse`, `RouteHandler`.
 - `src/routedef/headers.py`: case-insensitive header normalization helpers.
 - `src/routedef/request.py`: query/body/path helper functions.
@@ -28,8 +28,9 @@
 - `src/routedef/adapters/fastapi.py`: FastAPI adapter.
 - `src/routedef/adapters/cloudflare.py`: direct Cloudflare Python Worker dispatcher.
 - `tests/`: one focused test module per source module plus migration-style tests.
-- `scripts/`: SPDX, LOC, xenon, license checks.
-- `.ci/`: strict empty baselines.
+- `scripts/mutation_gate.py`: manual mutation result gate.
+- `scripts/check_spdx_headers.py`, `scripts/check_max_loc.py`, `scripts/check_xenon.py`, `scripts/check_licenses.py`: planned Task 9 release-gate scripts.
+- `.ci/`: planned Task 9 strict empty baselines.
 - `docs/architecture.md`, `docs/migration.md`: public docs.
 
 All files must stay under 500 lines. Split by module before any file reaches 450 lines. Prefer clear module names over underscore-heavy helper files. `__init__.py` files export symbols only.
