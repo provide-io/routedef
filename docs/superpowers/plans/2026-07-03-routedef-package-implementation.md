@@ -246,11 +246,11 @@ uv run pytest tests/test_cloudflare_adapter.py -q
 def adapt_uwarp(handler: UwarpHandler) -> RouteHandler[object, dict[str, object]]:
     async def wrapped(request: RouteRequest[object, dict[str, object]]) -> RouteResponse:
         return await handler(
-            path_params=request.path_params,
-            body=request.body,
-            query=request.query,
-            game=request.context["game"],
-            auth=request.auth,
+            request.path_params,
+            request.body,
+            request.query,
+            request.context["game"],
+            request.auth,
         )
     return wrapped
 ```
