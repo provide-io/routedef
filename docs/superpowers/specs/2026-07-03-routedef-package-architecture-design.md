@@ -106,7 +106,7 @@ Core public types:
 - `CompiledRoute[AuthT, ContextT]`
 - `RouteMatch[AuthT, ContextT]`
 
-`RouteDef` will include method, path template, handler, name, auth-required flag, and app-defined metadata. It will not include built-in role, grant, player, sysop, or webhook semantics.
+`RouteDef` includes method, path template, handler, and app-defined metadata. Route names, auth-required flags, and policy-specific values belong in metadata or in the consuming application. It does not include built-in role, grant, player, sysop, or webhook semantics.
 
 `RouteRequest` will include normalized method, runtime path, matched route path, path parameters, query parameters, headers, parsed body, raw body, auth value, and context value.
 
@@ -142,7 +142,7 @@ Greedy catch-all segments are not part of v1 unless a current migration target r
 
 ### FastAPI Adapter
 
-`routedef.adapters.fastapi` builds a FastAPI `APIRouter` or registers routes onto an app.
+`routedef.adapters.fastapi` exposes `build_fastapi_router(...)`, which builds a FastAPI `APIRouter` for the caller to include on an app.
 
 Responsibilities:
 
