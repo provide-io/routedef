@@ -5,6 +5,8 @@ path = [
     ".gitignore",
     ".pre-commit-config.yaml",
     ".secrets.baseline",
+    "docs/architecture.md",
+    "docs/migration.md",
     "docs/superpowers/plans/2026-07-03-routedef-package-implementation.md",
     "docs/superpowers/specs/2026-07-03-routedef-package-architecture-design.md",
     "README.md",
