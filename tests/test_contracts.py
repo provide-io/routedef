@@ -22,14 +22,25 @@ def test_route_method_normalizes_to_uppercase() -> None:
 
 @pytest.mark.parametrize("method", ["", "   "])
 def test_route_rejects_empty_method(method: str) -> None:
-    with pytest.raises(RouteConfigError, match="method"):
+    with pytest.raises(RouteConfigError) as exc_info:
         RouteDef(method, "/v1/items/{id}", echo)
 
+    assert str(exc_info.value) == "route method must not be empty"
 
-@pytest.mark.parametrize("path", ["", "   ", "bad"])
-def test_route_rejects_invalid_path(path: str) -> None:
-    with pytest.raises(RouteConfigError, match="path"):
+
+@pytest.mark.parametrize("path", ["", "   "])
+def test_route_rejects_empty_path(path: str) -> None:
+    with pytest.raises(RouteConfigError) as exc_info:
         RouteDef("GET", path, echo)
+
+    assert str(exc_info.value) == "route path must not be empty"
+
+
+def test_route_rejects_path_without_leading_slash() -> None:
+    with pytest.raises(RouteConfigError) as exc_info:
+        RouteDef("GET", "bad", echo)
+
+    assert str(exc_info.value) == "route path must start with '/'"
 
 
 def test_route_is_immutable_and_metadata_is_read_only() -> None:

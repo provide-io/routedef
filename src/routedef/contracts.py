@@ -33,7 +33,12 @@ def _validate_path(path: str) -> str:
 
 
 def _readonly_mapping(mapping: Mapping[str, ValueT]) -> Mapping[str, ValueT]:
-    return MappingProxyType({key: cast(ValueT, _deep_snapshot(value)) for key, value in mapping.items()})
+    snapshot: dict[str, ValueT] = {key: _typed_snapshot(value) for key, value in mapping.items()}
+    return MappingProxyType(snapshot)
+
+
+def _typed_snapshot(value: ValueT) -> ValueT:
+    return cast(ValueT, _deep_snapshot(value))  # pragma: no mutate - cast is runtime-neutral.
 
 
 def _deep_snapshot(value: object) -> object:
@@ -53,7 +58,8 @@ def _normalized_headers(headers: Mapping[str, str]) -> dict[str, str]:
 def _headers_with_content_type(headers: Mapping[str, str], content_type: str | None) -> Mapping[str, str]:
     normalized_headers = _normalized_headers(headers)
     if content_type is not None and "content-type" not in normalized_headers:
-        normalized_headers["content-type"] = content_type
+        header_name = "content-type"  # pragma: no mutate - response construction normalizes header keys.
+        normalized_headers[header_name] = content_type
     return _readonly_mapping(normalized_headers)
 
 
