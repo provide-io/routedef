@@ -22,6 +22,35 @@ pattern = "^(?P<version>.+)$"
 [tool.hatch.build.targets.wheel]
 packages = ["src/routedef"]
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "/.gitignore",
+    "/.pre-commit-config.yaml",
+    "/.secrets.baseline",
+    "/LICENSE",
+    "/LICENSES",
+    "/README.md",
+    "/REUSE.toml",
+    "/VERSION",
+    "/docs",
+    "/pyproject.toml",
+    "/src",
+    "/tests",
+]
+exclude = [
+    "/.coverage",
+    "/.mypy_cache",
+    "/.mutmut-cache",
+    "/.pytest_cache",
+    "/.ruff_cache",
+    "/.venv",
+    "/dist",
+    "/htmlcov",
+    "/uv.lock",
+    "**/__pycache__",
+    "**/*.py[cod]",
+]
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"
