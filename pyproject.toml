@@ -25,6 +25,7 @@ packages = ["src/routedef"]
 [tool.hatch.build.targets.sdist]
 include = [
     "/.gitignore",
+    "/.ci",
     "/.pre-commit-config.yaml",
     "/.secrets.baseline",
     "/LICENSE",

@@ -29,8 +29,8 @@
 - `src/routedef/adapters/cloudflare.py`: direct Cloudflare Python Worker dispatcher.
 - `tests/`: one focused test module per source module plus migration-style tests.
 - `scripts/mutation_gate.py`: manual mutation result gate.
-- `scripts/check_spdx_headers.py`, `scripts/check_max_loc.py`, `scripts/check_xenon.py`, `scripts/check_licenses.py`: planned Task 9 release-gate scripts.
-- `.ci/`: planned Task 9 strict empty baselines.
+- `scripts/check_spdx_headers.py`, `scripts/check_max_loc.py`, `scripts/check_xenon.py`, `scripts/check_licenses.py`: release-gate scripts.
+- `.ci/`: strict release-gate baselines.
 - `docs/architecture.md`, `docs/migration.md`: public docs.
 
 All files must stay under 500 lines. Split by module before any file reaches 450 lines. Prefer clear module names over underscore-heavy helper files. `__init__.py` files export symbols only.
@@ -273,17 +273,17 @@ uv run pytest tests/test_undef_style.py tests/test_uwarp_style.py -q
 
 **Files:** create `scripts/check_spdx_headers.py`, `scripts/check_max_loc.py`, `scripts/check_xenon.py`, `scripts/check_licenses.py`, `.ci/max-loc-baseline.json`, `.ci/xenon-baseline.json`, `.ci/mutation-baseline.json`; modify `.pre-commit-config.yaml`, `pyproject.toml`.
 
-- [ ] Add scripts under 500 lines each. `check_max_loc.py` must fail any non-`.git` project file over 500 lines. `check_spdx_headers.py` must require the Provide.io SPDX header in Python files.
-- [ ] Run focused script checks:
+- [x] Add scripts under 500 lines each. `check_max_loc.py` must fail any non-`.git` project file over 500 lines. `check_spdx_headers.py` must require the Provide.io SPDX header in Python files.
+- [x] Run focused script checks:
 
 ```bash
 uv run python scripts/check_spdx_headers.py
-uv run python scripts/check_max_loc.py --max-lines 500 --roots src tests scripts docs
+uv run python scripts/check_max_loc.py --max-lines 500 --roots .
 uv run python scripts/check_xenon.py --max-absolute C --max-modules B --max-average A --paths src/routedef
 uv run python scripts/check_licenses.py
 ```
 
-- [ ] Run full verification:
+- [x] Run full verification:
 
 ```bash
 uv run ruff format --check src tests scripts
@@ -298,7 +298,7 @@ uv run python -m pip_audit --path .
 uv run reuse lint
 ```
 
-- [ ] Run mutation gate:
+- [x] Run mutation gate:
 
 ```bash
 uv run mutmut run
@@ -307,14 +307,14 @@ uv run mutmut results
 
 Expected: zero surviving mutants. Add targeted tests for any surviving mutants and rerun.
 
-- [ ] Commit: `git add scripts .ci .pre-commit-config.yaml pyproject.toml src tests docs && git commit -m "chore: add quality gates"`.
+- [x] Commit: `git add scripts .ci .pre-commit-config.yaml pyproject.toml src tests docs && git commit -m "chore: add quality gates"`.
 
 ## Final Verification
 
-- [ ] Run `git status --short`; expect a clean tree.
-- [ ] Run `uv run pre-commit run --all-files`; expect all hooks pass.
-- [ ] Run `uv run pre-commit run mutation-sweep --hook-stage manual`; expect zero surviving mutants.
-- [ ] Run `find . -path ./.git -prune -o -type f -print | xargs wc -l | sort -nr | head`; expect no project file over 500 lines.
+- [x] Run `git status --short`; expect a clean tree.
+- [x] Run `uv run pre-commit run --all-files`; expect all hooks pass.
+- [x] Run `uv run pre-commit run mutation-sweep --hook-stage manual`; expect zero surviving mutants.
+- [x] Run `find . -path ./.git -prune -o -type f -print | xargs wc -l | sort -nr | head`; expect no project file over 500 lines.
 
 ## Self-Review
 

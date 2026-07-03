@@ -1,0 +1,6 @@
+{
+  "max_absolute": "C",
+  "max_modules": "B",
+  "max_average": "A",
+  "paths": ["src/routedef"]
+}

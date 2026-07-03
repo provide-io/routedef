@@ -9,13 +9,9 @@ repos:
     rev: v0.15.2
     hooks:
       - id: ruff-check
-        args: [--fix, --exit-non-zero-on-fix]
+        args: [--exit-non-zero-on-fix]
       - id: ruff-format
-
-  - repo: https://github.com/fsfe/reuse-tool
-    rev: v6.2.0
-    hooks:
-      - id: reuse
+        args: [--check]
 
   - repo: https://github.com/codespell-project/codespell
     rev: v2.4.1
@@ -27,11 +23,25 @@ repos:
     hooks:
       - id: max-loc
         name: python max loc
-        entry: uv run python -c "import pathlib, sys; bad=[str(p) for root in ('src','tests') for p in pathlib.Path(root).rglob('*.py') if sum(1 for _ in p.open(encoding='utf-8')) > 500]; print('\\n'.join(bad)); sys.exit(bool(bad))"
+        entry: uv run python scripts/check_max_loc.py --max-lines 500 --roots .
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: spdx-headers
+        name: Provide.io SPDX headers
+        entry: uv run python scripts/check_spdx_headers.py src tests scripts
         language: system
         pass_filenames: false
         always_run: true
         types: [python]
+
+      - id: licenses
+        name: license compliance
+        entry: uv run python scripts/check_licenses.py
+        language: system
+        pass_filenames: false
+        always_run: true
 
       - id: mypy
         name: mypy strict
@@ -75,7 +85,7 @@ repos:
 
       - id: xenon
         name: xenon complexity
-        entry: uv run xenon --max-absolute C --max-modules B --max-average A src tests
+        entry: uv run python scripts/check_xenon.py --max-absolute C --max-modules B --max-average A --paths src/routedef
         language: system
         pass_filenames: false
         always_run: true

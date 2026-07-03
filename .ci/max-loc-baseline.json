@@ -1,0 +1,5 @@
+{
+  "max_lines": 500,
+  "roots": ["src", "tests", "scripts", "docs"],
+  "policy": "no counted project file may exceed max_lines"
+}

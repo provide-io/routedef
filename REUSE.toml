@@ -2,6 +2,9 @@ version = 1
 
 [[annotations]]
 path = [
+    ".ci/max-loc-baseline.json",
+    ".ci/mutation-baseline.json",
+    ".ci/xenon-baseline.json",
     ".gitignore",
     ".pre-commit-config.yaml",
     ".secrets.baseline",

@@ -79,7 +79,7 @@ routedef/
         2026-07-03-routedef-package-architecture-design.md
 ```
 
-Task 9 will add release-gate scripts and `.ci` baselines. Until then, the only script is `scripts/mutation_gate.py`.
+Release-gate scripts live under `scripts/` and strict baselines live under `.ci/`.
 
 No file may exceed 500 lines. If a file approaches the limit, split it into a package module with a clear name. Prefer modules and subpackages over large underscore-prefixed helper files.
 
