@@ -92,10 +92,10 @@ show_missing = true
 skip_covered = false
 
 [tool.mutmut]
-paths_to_mutate = ["src/routedef/"]
-tests_dir = ["tests/"]
+source_paths = ["src/routedef/"]
 also_copy = ["VERSION", "scripts"]
 pytest_add_cli_args = ["--override-ini=addopts=-q -p no:cacheprovider"]
+pytest_add_cli_args_test_selection = ["tests/"]
 
 [dependency-groups]
 dev = [
