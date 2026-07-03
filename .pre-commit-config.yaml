@@ -91,7 +91,7 @@ repos:
 
       - id: mutation-sweep
         name: mutmut gate (manual)
-        entry: uv run mutmut run
+        entry: uv run python scripts/mutation_gate.py
         language: system
         pass_filenames: false
         always_run: true

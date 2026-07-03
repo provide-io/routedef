@@ -14,7 +14,7 @@ def load_version() -> str:
     try:
         return _metadata_version(_PACKAGE_NAME)
     except PackageNotFoundError:
-        return _VERSION_FILE.read_text(encoding="utf-8").strip()
+        return _VERSION_FILE.read_text(encoding="utf-8").strip()  # pragma: no mutate - UTF-8 aliases equivalent.
 
 
 __version__ = load_version()

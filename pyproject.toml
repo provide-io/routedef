@@ -34,6 +34,7 @@ include = [
     "/VERSION",
     "/docs",
     "/pyproject.toml",
+    "/scripts",
     "/src",
     "/tests",
 ]
@@ -93,7 +94,7 @@ skip_covered = false
 [tool.mutmut]
 paths_to_mutate = ["src/routedef/"]
 tests_dir = ["tests/"]
-also_copy = ["VERSION"]
+also_copy = ["VERSION", "scripts"]
 pytest_add_cli_args = ["--override-ini=addopts=-q -p no:cacheprovider"]
 
 [dependency-groups]
