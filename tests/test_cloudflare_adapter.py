@@ -6,17 +6,21 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from types import ModuleType
 from typing import TypeVar, cast
 
 import pytest
 
 from routedef import JSONValue, RouteDef, RouteRequest, RouteResponse, RouteTable
-from routedef.adapters.cloudflare import CloudflareDispatcher, CloudflareRequest
+from routedef.adapters.cloudflare import CloudflareDispatcher, CloudflareHeaders, CloudflareRequest
 
 AuthT = TypeVar("AuthT")
 ContextT = TypeVar("ContextT")
+
+
+def request_headers(headers: CloudflareHeaders | None) -> CloudflareHeaders:
+    return {} if headers is None else headers
 
 
 class FakeCloudflareResponse:
@@ -26,18 +30,50 @@ class FakeCloudflareResponse:
         self.headers = dict(headers or {})
 
 
+class FakeIndexOnlyHeaders:
+    def __init__(self, headers: Mapping[str, str]) -> None:
+        self._headers = {name.lower(): value for name, value in headers.items()}
+
+    def __getitem__(self, name: str) -> str:
+        return self._headers[name.lower()]
+
+
+class FakeGetOnlyHeaders:
+    def __init__(self, headers: Mapping[str, str]) -> None:
+        self._headers = {name.lower(): value for name, value in headers.items()}
+
+    def get(self, name: str) -> str | None:
+        return self._headers.get(name.lower())
+
+
+class FakeItemsOnlyHeaders:
+    def __init__(self, headers: Mapping[str, str]) -> None:
+        self._headers = dict(headers)
+
+    def items(self) -> tuple[tuple[str, str], ...]:
+        return tuple(self._headers.items())
+
+
+class FakeIterableHeaders:
+    def __init__(self, headers: Mapping[str, str]) -> None:
+        self._headers = tuple(headers.items())
+
+    def __iter__(self) -> Iterator[tuple[str, str]]:
+        return iter(self._headers)
+
+
 class FakeRequest:
     def __init__(
         self,
         url: str,
         *,
         method: str = "GET",
-        headers: Mapping[str, str] | None = None,
+        headers: CloudflareHeaders | None = None,
         body: bytes = b"",
     ) -> None:
         self.url = url
         self.method = method
-        self.headers: Mapping[str, str] = dict(headers or {})
+        self.headers = request_headers(headers)
         self.body = body
         self.array_buffer_reads = 0
 
@@ -52,12 +88,12 @@ class FakeTextRequest:
         url: str,
         *,
         method: str = "GET",
-        headers: Mapping[str, str] | None = None,
+        headers: CloudflareHeaders | None = None,
         body: str = "",
     ) -> None:
         self.url = url
         self.method = method
-        self.headers: Mapping[str, str] = dict(headers or {})
+        self.headers = request_headers(headers)
         self.body = body
         self.text_reads = 0
 
@@ -72,11 +108,11 @@ class FakeEmptyRequest:
         url: str,
         *,
         method: str = "GET",
-        headers: Mapping[str, str] | None = None,
+        headers: CloudflareHeaders | None = None,
     ) -> None:
         self.url = url
         self.method = method
-        self.headers: Mapping[str, str] = dict(headers or {})
+        self.headers = request_headers(headers)
 
 
 @pytest.fixture(autouse=True)
@@ -239,6 +275,74 @@ def test_cloudflare_dispatcher_normalizes_headers() -> None:
 
     assert response.status == 200
     assert response_json(response)["headers"] == {"x-trace": "abc", "content-type": "text/plain"}
+
+
+def test_cloudflare_dispatcher_normalizes_items_only_headers() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("GET", "/v1/headers", echo_request)]))
+
+    response = dispatch(
+        dispatcher,
+        FakeRequest(
+            "https://x.test/v1/headers",
+            method="GET",
+            headers=FakeItemsOnlyHeaders({"X-Trace": "abc", "Content-Type": "text/plain"}),
+        ),
+    )
+
+    assert response.status == 200
+    assert response_json(response)["headers"] == {"x-trace": "abc", "content-type": "text/plain"}
+
+
+def test_cloudflare_dispatcher_normalizes_iterable_pair_headers() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("GET", "/v1/headers", echo_request)]))
+
+    response = dispatch(
+        dispatcher,
+        FakeRequest(
+            "https://x.test/v1/headers",
+            method="GET",
+            headers=FakeIterableHeaders({"X-Trace": "abc", "Content-Type": "text/plain"}),
+        ),
+    )
+
+    assert response.status == 200
+    assert response_json(response)["headers"] == {"x-trace": "abc", "content-type": "text/plain"}
+
+
+def test_cloudflare_dispatcher_reads_json_content_type_from_index_only_headers() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/items", echo_request)]))
+
+    response = dispatch(
+        dispatcher,
+        FakeRequest(
+            "https://x.test/v1/items",
+            method="POST",
+            headers=FakeIndexOnlyHeaders({"Content-Type": "application/json"}),
+            body=b'{"name":"desk"}',
+        ),
+    )
+
+    assert response.status == 200
+    assert response_json(response)["headers"] == {"content-type": "application/json"}
+    assert response_json(response)["body"] == {"name": "desk"}
+
+
+def test_cloudflare_dispatcher_reads_text_content_type_from_get_only_headers() -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/notes", echo_request)]))
+
+    response = dispatch(
+        dispatcher,
+        FakeTextRequest(
+            "https://x.test/v1/notes",
+            method="POST",
+            headers=FakeGetOnlyHeaders({"Content-Type": "text/plain; charset=utf-8"}),
+            body="hello",
+        ),
+    )
+
+    assert response.status == 200
+    assert response_json(response)["headers"] == {"content-type": "text/plain; charset=utf-8"}
+    assert response_json(response)["body"] == "hello"
 
 
 def test_cloudflare_dispatcher_returns_400_for_invalid_json() -> None:

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from importlib import import_module
 from typing import Generic, Protocol, TypeAlias, TypeVar, cast, runtime_checkable
 from urllib.parse import urlsplit
@@ -26,17 +26,57 @@ AuthProvider = Callable[[RouteDef[AuthT, ContextT], "CloudflareRequest", Context
 EnforcerResult = None | bool | RouteResponse
 Enforcer = Callable[[RouteDef[AuthT, ContextT], "CloudflareRequest", ContextT, AuthT], MaybeAwaitable[EnforcerResult]]
 ArrayBufferBody: TypeAlias = bytes | bytearray | memoryview
+HeaderPair: TypeAlias = tuple[str, str]
+HeaderPairs: TypeAlias = Iterable[HeaderPair]
 ResponseFactory: TypeAlias = Callable[..., object]
 
 JSON_CONTENT_TYPE = "application/json"
 JSON_SUFFIX = "+json"
 TEXT_PREFIX = "text/"
+LOOKUP_HEADER_NAMES: tuple[str, ...] = (
+    "accept",
+    "accept-encoding",
+    "authorization",
+    "cache-control",
+    "content-length",
+    "content-type",
+    "cookie",
+    "host",
+    "if-match",
+    "if-modified-since",
+    "if-none-match",
+    "if-unmodified-since",
+    "referer",
+    "user-agent",
+    "x-forwarded-for",
+    "x-forwarded-host",
+    "x-forwarded-proto",
+    "x-real-ip",
+)
+
+
+@runtime_checkable
+class HeaderItems(Protocol):
+    def items(self) -> HeaderPairs: ...
+
+
+@runtime_checkable
+class HeaderGetter(Protocol):
+    def get(self, name: str) -> str | None: ...
+
+
+@runtime_checkable
+class HeaderIndexer(Protocol):
+    def __getitem__(self, name: str) -> str: ...
+
+
+CloudflareHeaders: TypeAlias = Mapping[str, str] | HeaderPairs | HeaderItems | HeaderGetter | HeaderIndexer
 
 
 class CloudflareRequest(Protocol):
     method: str
     url: str
-    headers: Mapping[str, str]
+    headers: CloudflareHeaders
 
 
 @runtime_checkable
@@ -125,7 +165,7 @@ async def _to_route_request(
     auth: AuthT,
 ) -> RouteRequest[AuthT, ContextT]:
     url = urlsplit(request.url)
-    headers = normalize_headers(request.headers)
+    headers = _normalize_cloudflare_headers(request.headers)
     raw_body = await _read_raw_body(request)
     try:
         body = _decode_body(raw_body, headers)
@@ -144,6 +184,50 @@ async def _to_route_request(
         auth=auth,
         context=context,
     )
+
+
+def _normalize_cloudflare_headers(headers: CloudflareHeaders) -> Mapping[str, str]:
+    if isinstance(headers, Mapping):
+        return _normalize_mapping_headers(headers)  # pragma: no mutate - mapping behavior is covered via dispatch.
+    if isinstance(headers, HeaderItems):
+        return _normalize_header_pairs(headers.items())
+    if isinstance(headers, Iterable):
+        return _normalize_iterable_headers(headers)
+    return _normalize_lookup_headers(headers)
+
+
+def _normalize_mapping_headers(headers: CloudflareHeaders) -> Mapping[str, str]:
+    return normalize_headers(cast(Mapping[str, str], headers))  # pragma: no mutate - cast is runtime-neutral.
+
+
+def _normalize_iterable_headers(headers: CloudflareHeaders) -> Mapping[str, str]:
+    return _normalize_header_pairs(cast(HeaderPairs, headers))  # pragma: no mutate - cast is runtime-neutral.
+
+
+def _normalize_header_pairs(headers: HeaderPairs) -> Mapping[str, str]:
+    return {name.lower(): value for name, value in headers}
+
+
+def _normalize_lookup_headers(headers: HeaderGetter | HeaderIndexer) -> Mapping[str, str]:
+    normalized: dict[str, str] = {}
+    for name in LOOKUP_HEADER_NAMES:
+        value = _lookup_header(headers, name)
+        if value is not None:
+            normalized[name] = value
+    return normalized
+
+
+def _lookup_header(headers: HeaderGetter | HeaderIndexer, name: str) -> str | None:
+    if isinstance(headers, HeaderGetter):
+        value = headers.get(name)
+        if value is not None:
+            return value
+    if isinstance(headers, HeaderIndexer):
+        try:
+            return headers[name]
+        except (IndexError, KeyError, TypeError):
+            return None
+    return None
 
 
 async def _read_raw_body(request: CloudflareRequest) -> bytes:
