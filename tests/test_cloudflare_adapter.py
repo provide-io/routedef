@@ -8,7 +8,7 @@ import json
 import sys
 from collections.abc import Iterator, Mapping
 from types import ModuleType
-from typing import TypeVar, cast
+from typing import TypeAlias, TypeVar, cast
 
 import pytest
 
@@ -17,6 +17,7 @@ from routedef.adapters.cloudflare import CloudflareDispatcher, CloudflareHeaders
 
 AuthT = TypeVar("AuthT")
 ContextT = TypeVar("ContextT")
+ToPyArrayBufferBody: TypeAlias = bytes | bytearray
 
 
 def request_headers(headers: CloudflareHeaders | None) -> CloudflareHeaders:
@@ -80,6 +81,35 @@ class FakeRequest:
     async def arrayBuffer(self) -> bytearray:
         self.array_buffer_reads += 1
         return bytearray(self.body)
+
+
+class FakeToPyArrayBuffer:
+    def __init__(self, body: ToPyArrayBufferBody) -> None:
+        self._body = body
+
+    def __bytes__(self) -> bytes:
+        raise TypeError("direct bytes conversion is unavailable")
+
+    def to_py(self) -> ToPyArrayBufferBody:
+        return self._body
+
+
+class FakeToPyArrayBufferRequest:
+    def __init__(
+        self,
+        url: str,
+        *,
+        method: str = "GET",
+        headers: CloudflareHeaders | None = None,
+        body: ToPyArrayBufferBody = b"",
+    ) -> None:
+        self.url = url
+        self.method = method
+        self.headers = request_headers(headers)
+        self.body = body
+
+    async def arrayBuffer(self) -> FakeToPyArrayBuffer:
+        return FakeToPyArrayBuffer(self.body)
 
 
 class FakeTextRequest:
@@ -249,6 +279,26 @@ def test_cloudflare_dispatcher_prefers_array_buffer_body_reader() -> None:
     assert request.array_buffer_reads == 1
     assert response.status == 200
     assert response_json(response)["body"] == {"ok": True}
+
+
+@pytest.mark.parametrize("body", [b'{"ok":true}', bytearray(b'{"ok":true}')])
+def test_cloudflare_dispatcher_handles_to_py_array_buffer_proxy(body: ToPyArrayBufferBody) -> None:
+    dispatcher = CloudflareDispatcher(RouteTable([RouteDef("POST", "/v1/items", echo_request)]))
+    request = FakeToPyArrayBufferRequest(
+        "https://x.test/v1/items",
+        method="POST",
+        headers={"Content-Type": "application/json"},
+        body=body,
+    )
+
+    with pytest.raises(TypeError, match="direct bytes conversion is unavailable"):
+        bytes(FakeToPyArrayBuffer(body))
+
+    response = dispatch(dispatcher, request)
+
+    assert response.status == 200
+    assert response_json(response)["body"] == {"ok": True}
+    assert response_json(response)["raw_body"] == '{"ok":true}'
 
 
 def test_cloudflare_dispatcher_handles_query_params() -> None:

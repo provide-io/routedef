@@ -6,7 +6,7 @@ from __future__ import annotations
 import inspect
 from collections.abc import Awaitable, Callable, Iterable, Mapping
 from importlib import import_module
-from typing import Generic, Protocol, TypeAlias, TypeVar, cast, runtime_checkable
+from typing import Generic, Protocol, SupportsBytes, TypeAlias, TypeVar, cast, runtime_checkable
 from urllib.parse import urlsplit
 
 from routedef.contracts import RouteDef, RouteRequest, RouteResponse
@@ -26,6 +26,7 @@ AuthProvider = Callable[[RouteDef[AuthT, ContextT], "CloudflareRequest", Context
 EnforcerResult = None | bool | RouteResponse
 Enforcer = Callable[[RouteDef[AuthT, ContextT], "CloudflareRequest", ContextT, AuthT], MaybeAwaitable[EnforcerResult]]
 ArrayBufferBody: TypeAlias = bytes | bytearray | memoryview
+ArrayBufferProxyBody: TypeAlias = ArrayBufferBody | Iterable[int] | SupportsBytes
 HeaderPair: TypeAlias = tuple[str, str]
 HeaderPairs: TypeAlias = Iterable[HeaderPair]
 ResponseFactory: TypeAlias = Callable[..., object]
@@ -70,7 +71,13 @@ class HeaderIndexer(Protocol):
     def __getitem__(self, name: str) -> str: ...
 
 
+@runtime_checkable
+class ArrayBufferProxy(Protocol):
+    def to_py(self) -> ArrayBufferProxyBody: ...
+
+
 CloudflareHeaders: TypeAlias = Mapping[str, str] | HeaderPairs | HeaderItems | HeaderGetter | HeaderIndexer
+ArrayBufferResult: TypeAlias = ArrayBufferBody | ArrayBufferProxy
 
 
 class CloudflareRequest(Protocol):
@@ -81,7 +88,7 @@ class CloudflareRequest(Protocol):
 
 @runtime_checkable
 class ArrayBufferRequest(CloudflareRequest, Protocol):
-    def arrayBuffer(self) -> Awaitable[ArrayBufferBody]: ...
+    def arrayBuffer(self) -> Awaitable[ArrayBufferResult]: ...
 
 
 @runtime_checkable
@@ -232,10 +239,16 @@ def _lookup_header(headers: HeaderGetter | HeaderIndexer, name: str) -> str | No
 
 async def _read_raw_body(request: CloudflareRequest) -> bytes:
     if isinstance(request, ArrayBufferRequest):
-        return bytes(await request.arrayBuffer())
+        return _array_buffer_to_bytes(await request.arrayBuffer())
     if isinstance(request, TextRequest):
         return (await request.text()).encode()
     return b""
+
+
+def _array_buffer_to_bytes(body: ArrayBufferResult) -> bytes:
+    if isinstance(body, ArrayBufferProxy):
+        return bytes(body.to_py())
+    return bytes(body)
 
 
 def _decode_body(raw_body: bytes, headers: Mapping[str, str]) -> object | None:
