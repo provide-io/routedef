@@ -1,0 +1,18 @@
+version = 1
+
+[[annotations]]
+path = [
+    ".pre-commit-config.yaml",
+    ".secrets.baseline",
+    "README.md",
+    "VERSION",
+    "pyproject.toml",
+    "src/routedef/py.typed",
+]
+SPDX-FileCopyrightText = "Copyright (c) 2026 provide.io llc"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "LICENSE"
+SPDX-FileCopyrightText = "Copyright (c) 2026 provide.io llc"
+SPDX-License-Identifier = "Apache-2.0"
