@@ -4,3 +4,7 @@
 
 class RouteConfigError(ValueError):
     """Raised when a route definition is invalid."""
+
+
+class BadRequestBody(ValueError):
+    """Raised when a request body cannot be decoded."""

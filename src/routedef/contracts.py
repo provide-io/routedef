@@ -149,5 +149,5 @@ class RouteResponse:
         return cls(status=status, body=body, headers=_headers_with_content_type(headers or {}, content_type))
 
     @classmethod
-    def empty(cls, *, status: int = 204, headers: Mapping[str, str] | None = None) -> RouteResponse:
+    def empty(cls, status: int = 204, *, headers: Mapping[str, str] | None = None) -> RouteResponse:
         return cls(status=status, body=None, headers=_headers_with_content_type(headers or {}, None))
