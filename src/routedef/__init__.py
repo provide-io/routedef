@@ -7,18 +7,22 @@ from routedef.headers import get_header, normalize_headers
 from routedef.matching import CompiledPath, compile_path_template, match_path
 from routedef.request import decode_json_body, decode_text_body, parse_query
 from routedef.response import response_body_kind, response_content_type, serialize_response_body
+from routedef.table import CompiledRoute, RouteMatch, RouteTable
 from routedef.types import JSONValue
 from routedef.version import __version__
 
 __all__ = (
     "BadRequestBody",
     "CompiledPath",
+    "CompiledRoute",
     "JSONValue",
     "RouteConfigError",
     "RouteDef",
     "RouteHandler",
+    "RouteMatch",
     "RouteRequest",
     "RouteResponse",
+    "RouteTable",
     "__version__",
     "compile_path_template",
     "decode_json_body",
