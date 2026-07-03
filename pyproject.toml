@@ -46,6 +46,7 @@ exclude = [
     "/.venv",
     "/dist",
     "/htmlcov",
+    "/mutants",
     "/uv.lock",
     "**/__pycache__",
     "**/*.py[cod]",
@@ -92,6 +93,7 @@ skip_covered = false
 [tool.mutmut]
 paths_to_mutate = ["src/routedef/"]
 tests_dir = ["tests/"]
+also_copy = ["VERSION"]
 pytest_add_cli_args = ["--override-ini=addopts=-q -p no:cacheprovider"]
 
 [dependency-groups]

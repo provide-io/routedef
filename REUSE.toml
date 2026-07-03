@@ -25,6 +25,7 @@ path = [
     ".coverage",
     ".mypy_cache/**",
     ".mutmut-cache/**",
+    "mutants/**",
     ".pytest_cache/**",
     ".ruff_cache/**",
     "**/__pycache__/**",

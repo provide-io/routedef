@@ -6,15 +6,18 @@ from pathlib import Path
 
 from pytest import MonkeyPatch
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_VERSION_FILE = _PROJECT_ROOT / "VERSION"
+
 
 def test_version_file() -> None:
-    assert Path("VERSION").read_text(encoding="utf-8").strip() == "0.1.0"
+    assert _VERSION_FILE.read_text(encoding="utf-8").strip() == "0.1.0"
 
 
 def test_package_version_sources_agree() -> None:
     import routedef
 
-    version_file = Path("VERSION").read_text(encoding="utf-8").strip()
+    version_file = _VERSION_FILE.read_text(encoding="utf-8").strip()
 
     assert isinstance(routedef.__all__, tuple)
     assert routedef.__version__ == version_file
