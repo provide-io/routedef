@@ -1,1 +1,5 @@
+.coverage
+.venv/
+__pycache__/
+uv.lock
 .worktrees/

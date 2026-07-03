@@ -1,15 +1,39 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
 # SPDX-License-Identifier: Apache-2.0
 
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+
+from pytest import MonkeyPatch
 
 
 def test_version_file() -> None:
     assert Path("VERSION").read_text(encoding="utf-8").strip() == "0.1.0"
 
 
-def test_package_exports() -> None:
+def test_package_version_sources_agree() -> None:
     import routedef
 
+    version_file = Path("VERSION").read_text(encoding="utf-8").strip()
+
     assert isinstance(routedef.__all__, tuple)
-    assert routedef.__version__ == "0.1.0"
+    assert routedef.__version__ == version_file
+    assert version("routedef") == version_file
+
+
+def test_package_version_falls_back_to_version_file(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from routedef import _version
+
+    version_file = tmp_path / "VERSION"
+    version_file.write_text("9.8.7\n", encoding="utf-8")
+
+    def missing_metadata(_package_name: str) -> str:
+        raise PackageNotFoundError
+
+    monkeypatch.setattr(_version, "_metadata_version", missing_metadata)
+    monkeypatch.setattr(_version, "_VERSION_FILE", version_file)
+
+    assert _version.load_version() == "9.8.7"
