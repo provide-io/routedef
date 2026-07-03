@@ -25,7 +25,7 @@ def test_package_version_falls_back_to_version_file(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from routedef import _version
+    import routedef.version as version_module
 
     version_file = tmp_path / "VERSION"
     version_file.write_text("9.8.7\n", encoding="utf-8")
@@ -33,7 +33,7 @@ def test_package_version_falls_back_to_version_file(
     def missing_metadata(_package_name: str) -> str:
         raise PackageNotFoundError
 
-    monkeypatch.setattr(_version, "_metadata_version", missing_metadata)
-    monkeypatch.setattr(_version, "_VERSION_FILE", version_file)
+    monkeypatch.setattr(version_module, "_metadata_version", missing_metadata)
+    monkeypatch.setattr(version_module, "_VERSION_FILE", version_file)
 
-    assert _version.load_version() == "9.8.7"
+    assert version_module.load_version() == "9.8.7"
