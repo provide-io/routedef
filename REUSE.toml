@@ -19,3 +19,17 @@ SPDX-License-Identifier = "Apache-2.0"
 path = "LICENSE"
 SPDX-FileCopyrightText = "Copyright (c) 2026 provide.io llc"
 SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = [
+    ".coverage",
+    ".mypy_cache/**",
+    ".mutmut-cache/**",
+    ".pytest_cache/**",
+    ".ruff_cache/**",
+    "**/__pycache__/**",
+    "dist/**",
+    "htmlcov/**",
+]
+SPDX-FileCopyrightText = "Copyright (c) 2026 provide.io llc"
+SPDX-License-Identifier = "Apache-2.0"
