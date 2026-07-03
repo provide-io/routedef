@@ -1,4 +1,4 @@
-# routedef Architecture
+# RouteDef Architecture
 
 `routedef` keeps route declarations, matching, request/response contracts, and web-runtime adapters separate.
 The core package has no framework dependency, and adapters are the only place runtime-specific objects belong.
