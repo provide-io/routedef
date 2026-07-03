@@ -51,6 +51,18 @@ def _deep_snapshot(value: object) -> object:
     return value
 
 
+def _body_snapshot(value: object) -> object:
+    if isinstance(value, Mapping):
+        return {key: _body_snapshot(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_body_snapshot(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_body_snapshot(item) for item in value)
+    if isinstance(value, set | frozenset):
+        return frozenset(_body_snapshot(item) for item in value)
+    return value
+
+
 def _normalized_headers(headers: Mapping[str, str]) -> dict[str, str]:
     return {name.lower(): value for name, value in headers.items()}
 
@@ -100,7 +112,7 @@ class RouteRequest(Generic[AuthT, ContextT]):
         object.__setattr__(self, "path_params", _readonly_mapping(self.path_params))
         object.__setattr__(self, "query", _readonly_mapping(self.query))
         object.__setattr__(self, "headers", _readonly_mapping(self.headers))
-        object.__setattr__(self, "body", _deep_snapshot(self.body))
+        object.__setattr__(self, "body", _body_snapshot(self.body))
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -110,7 +122,7 @@ class RouteResponse:
     headers: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "body", _deep_snapshot(self.body))
+        object.__setattr__(self, "body", _body_snapshot(self.body))
         object.__setattr__(self, "headers", _readonly_mapping(_normalized_headers(self.headers)))
 
     @classmethod
