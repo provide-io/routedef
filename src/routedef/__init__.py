@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 
 from routedef.contracts import RouteDef, RouteHandler, RouteRequest, RouteResponse
 from routedef.errors import BadRequestBody, RouteConfigError

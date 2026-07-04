@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -110,6 +110,6 @@ def test_license_command_runs_reuse_lint() -> None:
 def test_quality_scripts_have_required_spdx_header(name: str) -> None:
     script_path = SCRIPT_DIR / f"{name}.py"
     copyright_line = "# SPDX" + "-FileCopyrightText: Copyright (c) 2026 provide.io llc"
-    license_line = "# SPDX" + "-License-Identifier: Apache-2.0"
+    license_line = "# SPDX" + "-License-Identifier: MIT"
 
     assert script_path.read_text(encoding="utf-8").splitlines()[:2] == [copyright_line, license_line]

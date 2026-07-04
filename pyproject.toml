@@ -4,7 +4,7 @@ dynamic = ["version"]
 description = "Route definition primitives for Python services."
 readme = "README.md"
 requires-python = ">=3.11"
-license = "Apache-2.0"
+license = "MIT"
 authors = [{ name = "provide.io llc" }]
 dependencies = []
 

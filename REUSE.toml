@@ -23,12 +23,12 @@ path = [
     "src/routedef/py.typed",
 ]
 SPDX-FileCopyrightText = "Copyright (c) 2026 provide.io llc"
-SPDX-License-Identifier = "Apache-2.0"
+SPDX-License-Identifier = "MIT"
 
 [[annotations]]
 path = "LICENSE"
 SPDX-FileCopyrightText = "Copyright (c) 2026 provide.io llc"
-SPDX-License-Identifier = "Apache-2.0"
+SPDX-License-Identifier = "MIT"
 
 [[annotations]]
 path = [
@@ -43,4 +43,4 @@ path = [
     "htmlcov/**",
 ]
 SPDX-FileCopyrightText = "Copyright (c) 2026 provide.io llc"
-SPDX-License-Identifier = "Apache-2.0"
+SPDX-License-Identifier = "MIT"

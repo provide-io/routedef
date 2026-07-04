@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 COPYRIGHT_LINE = "# SPDX" + "-FileCopyrightText: Copyright (c) 2026 provide.io llc"
-LICENSE_LINE = "# SPDX" + "-License-Identifier: Apache-2.0"
+LICENSE_LINE = "# SPDX" + "-License-Identifier: MIT"
 EXPECTED_HEADER = (COPYRIGHT_LINE, LICENSE_LINE)
 DEFAULT_ROOTS = ("src", "tests", "scripts")
 SKIP_DIRS = {

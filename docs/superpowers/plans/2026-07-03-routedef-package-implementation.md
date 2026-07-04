@@ -57,12 +57,12 @@ def test_package_exports() -> None:
 ```
 
 - [ ] Run `uv run pytest tests/test_package_metadata.py -q`; expect import/config failure.
-- [ ] Add scaffold. `pyproject.toml` uses `requires-python = ">=3.11"`, `license = "Apache-2.0"`, author `provide.io llc`, hatchling, ruff, mypy strict, ty, pytest coverage fail-under 100, mutmut, and dev deps for all gates.
+- [ ] Add scaffold. `pyproject.toml` uses `requires-python = ">=3.11"`, `license = "MIT"`, author `provide.io llc`, hatchling, ruff, mypy strict, ty, pytest coverage fail-under 100, mutmut, and dev deps for all gates.
 - [ ] Add SPDX headers to Python files:
 
 ```python
 # SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 ```
 
 - [ ] Run early checks:

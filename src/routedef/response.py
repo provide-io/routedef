@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 
 import json
 from typing import Final, Literal, cast
