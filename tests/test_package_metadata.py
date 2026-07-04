@@ -13,7 +13,7 @@ _VERSION_FILE = _PROJECT_ROOT / "VERSION"
 
 
 def test_version_file() -> None:
-    assert _VERSION_FILE.read_text(encoding="utf-8").strip() == "0.1.0"
+    assert _VERSION_FILE.read_text(encoding="utf-8").strip() == "0.1.1"
 
 
 def test_package_version_sources_agree() -> None:
@@ -70,4 +70,4 @@ def test_package_version_falls_back_to_constant_when_vendored(
     monkeypatch.setattr(version_module, "_metadata_version", missing_metadata)
     monkeypatch.setattr(version_module, "_VERSION_FILE", tmp_path / "missing-version")
 
-    assert version_module.load_version() == "0.1.0"
+    assert version_module.load_version() == "0.1.1"
