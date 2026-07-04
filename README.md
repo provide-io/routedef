@@ -39,9 +39,8 @@ boundary may not be worth adding.
 ![routedef package boundaries](https://raw.githubusercontent.com/provide-io/routedef/main/docs/diagrams/runtime-adapters.svg)
 
 See [docs/architecture.md](https://github.com/provide-io/routedef/blob/main/docs/architecture.md) for package
-boundaries and [docs/migration.md](https://github.com/provide-io/routedef/blob/main/docs/migration.md) for migration
-examples covering undef-style roles, admin authorization callbacks, Taybols JWT auth, and uwarp split-argument
-handlers.
+boundaries and [examples/README.md](https://github.com/provide-io/routedef/blob/main/examples/README.md) for
+generic samples covering route metadata policy, bearer-token auth, and legacy split-argument handlers.
 
 ## Basic Usage 🚀
 

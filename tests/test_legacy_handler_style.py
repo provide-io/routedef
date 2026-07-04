@@ -10,15 +10,15 @@ from typing import TypeAlias, cast
 from routedef import JSONValue, RouteDef, RouteHandler, RouteRequest, RouteResponse, RouteTable
 
 GameContext: TypeAlias = dict[str, object]
-UwarpAuth: TypeAlias = dict[str, object]
-UwarpHandler: TypeAlias = Callable[
-    [Mapping[str, str], object | None, Mapping[str, str], object, UwarpAuth],
+SessionAuth: TypeAlias = dict[str, object]
+LegacyHandler: TypeAlias = Callable[
+    [Mapping[str, str], object | None, Mapping[str, str], object, SessionAuth],
     Awaitable[RouteResponse],
 ]
 
 
-def adapt_uwarp(handler: UwarpHandler) -> RouteHandler[UwarpAuth, GameContext]:
-    async def wrapped(request: RouteRequest[UwarpAuth, GameContext]) -> RouteResponse:
+def adapt_split_arguments(handler: LegacyHandler) -> RouteHandler[SessionAuth, GameContext]:
+    async def wrapped(request: RouteRequest[SessionAuth, GameContext]) -> RouteResponse:
         return await handler(
             request.path_params,
             request.body,
@@ -35,7 +35,7 @@ async def split_arg_move_handler(
     body: object | None,
     query: Mapping[str, str],
     game: object,
-    auth: UwarpAuth,
+    auth: SessionAuth,
 ) -> RouteResponse:
     typed_body = cast(Mapping[str, object], body)
     typed_game = cast(Mapping[str, object], game)
@@ -53,9 +53,9 @@ async def split_arg_move_handler(
     )
 
 
-async def _dispatch_uwarp(
-    route: RouteDef[UwarpAuth, GameContext],
-    request: RouteRequest[UwarpAuth, GameContext],
+async def _dispatch_legacy_handler(
+    route: RouteDef[SessionAuth, GameContext],
+    request: RouteRequest[SessionAuth, GameContext],
 ) -> RouteResponse:
     table = RouteTable([route])
     match = table.match(request.method, request.path)
@@ -75,11 +75,11 @@ async def _dispatch_uwarp(
     return await match.route.handler(matched_request)
 
 
-def test_uwarp_split_arg_handler_can_be_adapted_to_route_handler() -> None:
-    route: RouteDef[UwarpAuth, GameContext] = RouteDef(
-        "POST", "/games/{match_id}/moves", adapt_uwarp(split_arg_move_handler)
+def test_split_arg_handler_can_be_adapted_to_route_handler() -> None:
+    route: RouteDef[SessionAuth, GameContext] = RouteDef(
+        "POST", "/games/{match_id}/moves", adapt_split_arguments(split_arg_move_handler)
     )
-    request = RouteRequest[UwarpAuth, GameContext](
+    request = RouteRequest[SessionAuth, GameContext](
         method="POST",
         path="/games/match-42/moves",
         route_path="/games/{match_id}/moves",
@@ -89,7 +89,7 @@ def test_uwarp_split_arg_handler_can_be_adapted_to_route_handler() -> None:
         context={"game": {"id": "chess"}},
     )
 
-    response = asyncio.run(_dispatch_uwarp(route, request))
+    response = asyncio.run(_dispatch_legacy_handler(route, request))
 
     assert response.status == 200
     assert response.body == {

@@ -14,7 +14,7 @@ from routedef import JSONValue, RouteDef, RouteRequest, RouteResponse, RouteTabl
 
 
 @dataclass(frozen=True, slots=True)
-class BillingUser:
+class ReportUser:
     user_id: str
     roles: frozenset[str]
 
@@ -26,7 +26,7 @@ class AdminUser:
 
 
 @dataclass(frozen=True, slots=True)
-class TaybolsUser:
+class TokenUser:
     sub: str
     email: str
     scopes: tuple[str, ...]
@@ -39,12 +39,10 @@ class IncomingRequest:
     headers: Mapping[str, str]
 
 
-BillingContext: TypeAlias = dict[str, object]
-BillingRoute: TypeAlias = RouteDef[BillingUser, BillingContext]
-BillingRequest: TypeAlias = RouteRequest[BillingUser, BillingContext]
-BillingEnforcer: TypeAlias = Callable[
-    [BillingRoute, IncomingRequest, BillingContext, BillingUser], bool | RouteResponse
-]
+ReportContext: TypeAlias = dict[str, object]
+ReportRoute: TypeAlias = RouteDef[ReportUser, ReportContext]
+ReportRequest: TypeAlias = RouteRequest[ReportUser, ReportContext]
+ReportEnforcer: TypeAlias = Callable[[ReportRoute, IncomingRequest, ReportContext, ReportUser], bool | RouteResponse]
 
 AdminContext: TypeAlias = dict[str, object]
 AdminRoute: TypeAlias = RouteDef[AdminUser, AdminContext]
@@ -52,17 +50,17 @@ AdminRequest: TypeAlias = RouteRequest[AdminUser, AdminContext]
 AdminAuthorize: TypeAlias = Callable[[AdminUser, str, Mapping[str, object]], bool]
 AdminEnforcer: TypeAlias = Callable[[AdminRoute, IncomingRequest, AdminContext, AdminUser], bool | RouteResponse]
 
-TaybolsContext: TypeAlias = dict[str, object]
-TaybolsRoute: TypeAlias = RouteDef[TaybolsUser, TaybolsContext]
-TaybolsRequest: TypeAlias = RouteRequest[TaybolsUser, TaybolsContext]
+TokenContext: TypeAlias = dict[str, object]
+TokenRoute: TypeAlias = RouteDef[TokenUser, TokenContext]
+TokenRequest: TypeAlias = RouteRequest[TokenUser, TokenContext]
 
 
-async def billing_handler(request: BillingRequest) -> RouteResponse:
+async def report_handler(request: ReportRequest) -> RouteResponse:
     return RouteResponse.json(
         {
-            "account_id": request.path_params["account_id"],
+            "project_id": request.path_params["project_id"],
             "actor": request.auth.user_id,
-            "tenant": cast(str, request.context["tenant"]),
+            "workspace": cast(str, request.context["workspace"]),
         }
     )
 
@@ -71,22 +69,22 @@ async def admin_handler(request: AdminRequest) -> RouteResponse:
     return RouteResponse.json({"deleted": request.path_params["user_id"], "actor": request.auth.user_id})
 
 
-async def taybols_handler(request: TaybolsRequest) -> RouteResponse:
+async def token_handler(request: TokenRequest) -> RouteResponse:
     return RouteResponse.json(
         {
             "sub": request.auth.sub,
             "email": request.auth.email,
             "scopes": list(request.auth.scopes),
-            "app": cast(str, request.context["app"]),
+            "issuer": cast(str, request.context["issuer"]),
         }
     )
 
 
-def billing_role_enforcer(
-    route: BillingRoute,
+def report_role_enforcer(
+    route: ReportRoute,
     request: IncomingRequest,
-    context: BillingContext,
-    auth: BillingUser,
+    context: ReportContext,
+    auth: ReportUser,
 ) -> bool | RouteResponse:
     required_roles = set(cast(tuple[str, ...], route.metadata.get("roles", ())))
     if required_roles <= auth.roles:
@@ -98,7 +96,7 @@ def billing_role_enforcer(
                 "detail": "forbidden",
                 "required_roles": sorted(required_roles),
                 "path": request.path,
-                "tenant": cast(str, context["tenant"]),
+                "workspace": cast(str, context["workspace"]),
             },
         ),
         status=403,
@@ -124,17 +122,17 @@ def admin_enforcer_from_authorize(authorize: AdminAuthorize) -> AdminEnforcer:
     return enforcer
 
 
-def taybols_auth_provider(
-    route: TaybolsRoute,
+def token_auth_provider(
+    route: TokenRoute,
     request: IncomingRequest,
-    context: TaybolsContext,
-) -> TaybolsUser:
-    assert route.metadata["auth"] == "taybols-jwt"
-    assert context["app"] == "taybols"
+    context: TokenContext,
+) -> TokenUser:
+    assert route.metadata["auth"] == "bearer-token"
+    assert context["issuer"] == "example-idp"
     scheme, _, token = request.headers["authorization"].partition(" ")
     assert scheme == "Bearer"
     claims = _decode_fake_jwt_payload(token)
-    return TaybolsUser(
+    return TokenUser(
         sub=cast(str, claims["sub"]),
         email=cast(str, claims["email"]),
         scopes=tuple(cast(list[str], claims["scopes"])),
@@ -153,12 +151,12 @@ def _fake_jwt(claims: Mapping[str, JSONValue]) -> str:
     return f"test.{encoded_claims.rstrip('=')}.signature"
 
 
-async def _dispatch_billing(
-    route: BillingRoute,
+async def _dispatch_report(
+    route: ReportRoute,
     incoming: IncomingRequest,
-    context: BillingContext,
-    auth: BillingUser,
-    enforcer: BillingEnforcer,
+    context: ReportContext,
+    auth: ReportUser,
+    enforcer: ReportEnforcer,
 ) -> RouteResponse:
     table = RouteTable([route])
     match = table.match(incoming.method, incoming.path)
@@ -206,15 +204,15 @@ async def _dispatch_admin(
     return await match.route.handler(route_request)
 
 
-async def _dispatch_taybols(
-    route: TaybolsRoute,
+async def _dispatch_token(
+    route: TokenRoute,
     incoming: IncomingRequest,
-    context: TaybolsContext,
+    context: TokenContext,
 ) -> RouteResponse:
     table = RouteTable([route])
     match = table.match(incoming.method, incoming.path)
     assert match is not None
-    auth = taybols_auth_provider(match.route, incoming, context)
+    auth = token_auth_provider(match.route, incoming, context)
     route_request = RouteRequest(
         method=incoming.method,
         path=incoming.path,
@@ -226,47 +224,47 @@ async def _dispatch_taybols(
     return await match.route.handler(route_request)
 
 
-def test_undef_billing_role_metadata_is_enforced_from_route_def() -> None:
+def test_route_metadata_roles_are_enforced_from_route_def() -> None:
     route = RouteDef(
         "GET",
-        "/accounts/{account_id}/invoices",
-        billing_handler,
-        metadata={"roles": ("billing:read",)},
+        "/projects/{project_id}/reports",
+        report_handler,
+        metadata={"roles": ("reports:read",)},
     )
-    incoming = IncomingRequest("GET", "/accounts/acct_123/invoices", {})
-    context: BillingContext = {"tenant": "acme"}
+    incoming = IncomingRequest("GET", "/projects/project-123/reports", {})
+    context: ReportContext = {"workspace": "acme"}
 
     allowed = asyncio.run(
-        _dispatch_billing(
+        _dispatch_report(
             route,
             incoming,
             context,
-            BillingUser("user-ok", frozenset({"billing:read"})),
-            billing_role_enforcer,
+            ReportUser("user-ok", frozenset({"reports:read"})),
+            report_role_enforcer,
         )
     )
     denied = asyncio.run(
-        _dispatch_billing(
+        _dispatch_report(
             route,
             incoming,
             context,
-            BillingUser("user-no", frozenset({"support:read"})),
-            billing_role_enforcer,
+            ReportUser("user-no", frozenset({"support:read"})),
+            report_role_enforcer,
         )
     )
 
     assert allowed.status == 200
-    assert allowed.body == {"account_id": "acct_123", "actor": "user-ok", "tenant": "acme"}
+    assert allowed.body == {"project_id": "project-123", "actor": "user-ok", "workspace": "acme"}
     assert denied.status == 403
     assert denied.body == {
         "detail": "forbidden",
-        "required_roles": ["billing:read"],
-        "path": "/accounts/acct_123/invoices",
-        "tenant": "acme",
+        "required_roles": ["reports:read"],
+        "path": "/projects/project-123/reports",
+        "workspace": "acme",
     }
 
 
-def test_undef_admin_authorize_callback_wraps_into_enforcer() -> None:
+def test_authorize_callback_wraps_into_enforcer() -> None:
     route = RouteDef(
         "DELETE",
         "/admin/users/{user_id}",
@@ -307,23 +305,23 @@ def test_undef_admin_authorize_callback_wraps_into_enforcer() -> None:
     ]
 
 
-def test_taybols_jwt_bearer_token_becomes_route_auth_user() -> None:
-    token = _fake_jwt({"sub": "user_123", "email": "dev@taybols.test", "scopes": ["games:play"]})
+def test_bearer_token_becomes_route_auth_user() -> None:
+    token = _fake_jwt({"sub": "user_123", "email": "dev@example.test", "scopes": ["profile:read"]})
     route = RouteDef(
         "GET",
-        "/taybols/me",
-        taybols_handler,
-        metadata={"auth": "taybols-jwt"},
+        "/me",
+        token_handler,
+        metadata={"auth": "bearer-token"},
     )
-    incoming = IncomingRequest("GET", "/taybols/me", {"authorization": f"Bearer {token}"})
-    context: TaybolsContext = {"app": "taybols"}
+    incoming = IncomingRequest("GET", "/me", {"authorization": f"Bearer {token}"})
+    context: TokenContext = {"issuer": "example-idp"}
 
-    response = asyncio.run(_dispatch_taybols(route, incoming, context))
+    response = asyncio.run(_dispatch_token(route, incoming, context))
 
     assert response.status == 200
     assert response.body == {
         "sub": "user_123",
-        "email": "dev@taybols.test",
-        "scopes": ["games:play"],
-        "app": "taybols",
+        "email": "dev@example.test",
+        "scopes": ["profile:read"],
+        "issuer": "example-idp",
     }

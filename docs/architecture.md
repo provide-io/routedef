@@ -23,14 +23,14 @@ from routedef import RouteDef, RouteRequest, RouteResponse
 
 
 async def handler(request: RouteRequest[dict[str, object], dict[str, object]]) -> RouteResponse:
-    return RouteResponse.json({"account": request.path_params["account_id"]})
+    return RouteResponse.json({"project": request.path_params["project_id"]})
 
 
 route = RouteDef(
     "GET",
-    "/accounts/{account_id}/invoices",
+    "/projects/{project_id}/reports",
     handler,
-    metadata={"roles": ("billing:read",)},
+    metadata={"roles": ("reports:read",)},
 )
 ```
 
@@ -46,10 +46,10 @@ path parameters from `{name}` placeholders:
 from routedef import RouteTable
 
 table = RouteTable([route])
-match = table.match("GET", "/accounts/acct_123/invoices")
+match = table.match("GET", "/projects/project-123/reports")
 assert match is not None
 assert match.route is route
-assert match.path_params == {"account_id": "acct_123"}
+assert match.path_params == {"project_id": "project-123"}
 ```
 
 Adapters use the match to construct a `RouteRequest` with the runtime request method, concrete path, canonical
@@ -67,7 +67,7 @@ Adapters translate one host runtime into the canonical contracts:
 - They serialize `RouteResponse` back to the host response type.
 
 Auth providers and enforcers receive the matched `RouteDef`, so route metadata remains the policy bridge for
-applications such as `undef-billing` and `undef-admin`.
+application-specific authorization layers.
 
 ## Optional Dependency Isolation
 
