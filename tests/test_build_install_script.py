@@ -24,7 +24,7 @@ def load_script() -> ModuleType:
 
 def test_build_install_script_finds_single_wheel(tmp_path: Path) -> None:
     script = load_script()
-    wheel = tmp_path / "routedef-0.1.1-py3-none-any.whl"
+    wheel = tmp_path / "routedef-0.1.2-py3-none-any.whl"
     wheel.write_bytes(b"wheel")
 
     assert script.find_wheel(tmp_path) == wheel

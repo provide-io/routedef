@@ -19,7 +19,7 @@ async def handler(request):
 
 route = RouteDef("GET", "/v1/items/{item_id}", handler, name="item-detail")
 assert route.path_for(item_id="desk/chair") == "/v1/items/desk%2Fchair"
-assert routedef.__version__ == "0.1.1"
+assert routedef.__version__ == "0.1.2"
 """
 
 

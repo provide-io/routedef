@@ -5,6 +5,21 @@ Runtime-neutral route definitions for Python services.
 `routedef` gives applications one route contract that can be mounted into multiple runtimes. The core package has
 no FastAPI, Cloudflare, ASGI, auth, database, or application dependency. Runtime-specific code lives in adapters.
 
+## Installation 📦
+
+```bash
+pip install routedef
+```
+
+Install the FastAPI extra only in services that mount routes into FastAPI:
+
+```bash
+pip install "routedef[fastapi]"
+```
+
+Cloudflare Python Workers use the `routedef.adapters.cloudflare` adapter from the base package and run inside the
+Cloudflare Python Workers runtime.
+
 ## What It Provides ✅
 
 - `RouteDef`: method, path template, handler, and metadata.
@@ -52,7 +67,8 @@ async def get_item(request: RouteRequest[None, dict[str, object]]) -> RouteRespo
     return RouteResponse.json({"id": request.path_params["id"]})
 
 
-routes = RouteTable([RouteDef("GET", "/v1/items/{id}", get_item)])
+route_defs = [RouteDef("GET", "/v1/items/{id}", get_item)]
+routes = RouteTable(route_defs)
 ```
 
 ## FastAPI
@@ -62,7 +78,7 @@ from fastapi import FastAPI
 from routedef.adapters.fastapi import build_fastapi_router
 
 app = FastAPI()
-app.include_router(build_fastapi_router(routes))
+app.include_router(build_fastapi_router(route_defs))
 ```
 
 ## Cloudflare Python Workers
