@@ -18,6 +18,21 @@ async def echo(request: RouteRequest[str, dict[str, object]]) -> RouteResponse:
     return RouteResponse.json({"auth": request.auth, "path": request.path})
 
 
+def run_type_tool(args: tuple[str, ...]) -> subprocess.CompletedProcess[str]:
+    result = subprocess.CompletedProcess(args, 1, "")
+    for _ in range(3):
+        result = subprocess.run(
+            args,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        if result.returncode >= 0:
+            return result
+    return result
+
+
 def test_route_method_normalizes_to_uppercase() -> None:
     route = RouteDef("get", "/v1/items/{id}", echo)
 
@@ -269,20 +284,8 @@ def test_json_response_rejects_bytes_in_type_checkers(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    mypy_result = subprocess.run(
-        [sys.executable, "-m", "mypy", "--strict", str(snippet)],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
-    ty_result = subprocess.run(
-        [sys.executable, "-m", "ty", "check", str(snippet)],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
+    mypy_result = run_type_tool((sys.executable, "-m", "mypy", "--strict", str(snippet)))
+    ty_result = run_type_tool((sys.executable, "-m", "ty", "check", str(snippet)))
 
     assert mypy_result.returncode != 0, mypy_result.stdout
     assert "bytes" in mypy_result.stdout

@@ -3,7 +3,10 @@
 
 import importlib.util
 from pathlib import Path
+from subprocess import CompletedProcess
 from types import ModuleType
+
+from pytest import MonkeyPatch
 
 
 def load_mutation_gate() -> ModuleType:
@@ -40,3 +43,23 @@ def test_disallowed_survivors_ignores_documented_equivalents() -> None:
     """
 
     assert mutation_gate.disallowed_survivors(output) == ("routedef.version.x_load_version__mutmut_3: survived",)
+
+
+def test_main_allows_documented_equivalent_when_mutmut_results_is_nonzero(monkeypatch: MonkeyPatch) -> None:
+    mutation_gate = load_mutation_gate()
+    calls: list[list[str]] = []
+
+    def run_command(args: list[str]) -> CompletedProcess[str]:
+        calls.append(args)
+        if args == ["mutmut", "run"]:
+            return CompletedProcess(args=args, returncode=245, stdout="")
+        return CompletedProcess(
+            args=args,
+            returncode=245,
+            stdout="routedef.adapters.fastapi.x_build_fastapi_router__mutmut_148: survived\n",
+        )
+
+    monkeypatch.setattr(mutation_gate, "run_command", run_command)
+
+    assert mutation_gate.main() == 0
+    assert calls == [["mutmut", "run"], ["mutmut", "results"]]

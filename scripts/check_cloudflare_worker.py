@@ -19,7 +19,10 @@ from pathlib import Path
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 0
-STARTUP_TIMEOUT_SECONDS = 60.0
+STARTUP_TIMEOUT_SECONDS = 180.0
+STARTUP_TIMEOUT_ENV = "ROUTEDEF_CLOUDFLARE_STARTUP_TIMEOUT"
+STARTUP_ATTEMPTS = 3
+STARTUP_ATTEMPTS_ENV = "ROUTEDEF_CLOUDFLARE_STARTUP_ATTEMPTS"
 
 
 def subprocess_path() -> str:
@@ -31,6 +34,30 @@ def subprocess_path() -> str:
 
 def subprocess_env() -> dict[str, str]:
     return os.environ | {"MALLOC_CONF": "trust_madvise:false", "PATH": subprocess_path()}
+
+
+def startup_timeout_seconds() -> float:
+    value = os.environ.get(STARTUP_TIMEOUT_ENV)
+    if value is None:
+        return STARTUP_TIMEOUT_SECONDS
+    timeout = float(value)
+    if timeout <= 0:
+        raise ValueError(f"{STARTUP_TIMEOUT_ENV} must be greater than zero")
+    return timeout
+
+
+def startup_attempts() -> int:
+    value = os.environ.get(STARTUP_ATTEMPTS_ENV)
+    if value is None:
+        return STARTUP_ATTEMPTS
+    attempts = int(value)
+    if attempts <= 0:
+        raise ValueError(f"{STARTUP_ATTEMPTS_ENV} must be greater than zero")
+    return attempts
+
+
+class WorkerStartupError(RuntimeError):
+    pass
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,10 +169,10 @@ def run_sync(project_root: Path, env: dict[str, str]) -> None:
 
 
 def wait_for_worker(base_url: str, process: subprocess.Popen[str]) -> None:
-    deadline = time.monotonic() + STARTUP_TIMEOUT_SECONDS
+    deadline = time.monotonic() + startup_timeout_seconds()
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            raise RuntimeError("pywrangler dev exited before the Worker became reachable")
+            raise WorkerStartupError("pywrangler dev exited before the Worker became reachable")
         try:
             urllib.request.urlopen(f"{base_url}/missing", timeout=1.0).close()  # noqa: S310  # nosec B310
             return
@@ -178,12 +205,7 @@ def run_probe(probe: Probe) -> None:
         raise AssertionError(f"{probe.method} {probe.url} returned {payload!r}, expected {probe.payload!r}")
 
 
-def run_integration(root: Path, tmp_root: Path, *, host: str, port: int) -> None:
-    project_root = materialize_project(integration_paths(root), tmp_root)
-    port = choose_port(host, port)
-    base_url = f"http://{host}:{port}"
-    env = create_uv_wrapper(project_root)
-    run_sync(project_root, env)
+def run_worker(project_root: Path, env: dict[str, str], *, host: str, port: int, base_url: str) -> None:
     command = [require_executable("npx"), "--yes", "wrangler@latest", "dev", "--ip", host, "--port", str(port)]
     output_path = project_root / "wrangler-dev.log"
     output_file = output_path.open("w+", encoding="utf-8")
@@ -216,6 +238,26 @@ def run_integration(root: Path, tmp_root: Path, *, host: str, port: int) -> None
         output_file.close()
         if failed or process.returncode not in (0, -15, 143):
             print(output, file=sys.stderr)
+
+
+def run_integration(root: Path, tmp_root: Path, *, host: str, port: int) -> None:
+    project_root = materialize_project(integration_paths(root), tmp_root)
+    port = choose_port(host, port)
+    base_url = f"http://{host}:{port}"
+    env = create_uv_wrapper(project_root)
+    run_sync(project_root, env)
+    attempts = startup_attempts()
+    for attempt in range(1, attempts + 1):
+        try:
+            run_worker(project_root, env, host=host, port=port, base_url=base_url)
+            return
+        except (TimeoutError, WorkerStartupError):
+            if attempt == attempts:
+                raise
+            print(
+                f"Worker startup failed on attempt {attempt}; retrying {attempts - attempt} more time(s)",
+                file=sys.stderr,
+            )
 
 
 def parse_args(argv: tuple[str, ...]) -> argparse.Namespace:

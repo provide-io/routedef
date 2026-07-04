@@ -1,12 +1,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
 # SPDX-License-Identifier: MIT
 
+import tomllib
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 from pytest import MonkeyPatch
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_PYPROJECT_FILE = _PROJECT_ROOT / "pyproject.toml"
 _VERSION_FILE = _PROJECT_ROOT / "VERSION"
 
 
@@ -22,6 +24,17 @@ def test_package_version_sources_agree() -> None:
     assert isinstance(routedef.__all__, tuple)
     assert routedef.__version__ == version_file
     assert version("routedef") == version_file
+
+
+def test_project_urls_are_release_ready() -> None:
+    pyproject = tomllib.loads(_PYPROJECT_FILE.read_text(encoding="utf-8"))
+
+    assert pyproject["project"]["urls"] == {
+        "Homepage": "https://github.com/provide-io/routedef",
+        "Repository": "https://github.com/provide-io/routedef",
+        "Documentation": "https://github.com/provide-io/routedef/blob/main/docs/architecture.md",
+        "Issues": "https://github.com/provide-io/routedef/issues",
+    }
 
 
 def test_package_version_falls_back_to_version_file(

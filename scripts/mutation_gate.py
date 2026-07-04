@@ -32,8 +32,6 @@ def main() -> int:
 
     results = run_command(["mutmut", "results"])
     print(results.stdout, end="")
-    if results.returncode != 0:
-        return results.returncode
 
     survivors = disallowed_survivors(results.stdout)
     if survivors:
@@ -41,6 +39,9 @@ def main() -> int:
         for survivor in survivors:
             print(f"  {survivor}")
         return 1
+
+    if results.returncode != 0 and not surviving_mutants(results.stdout):
+        return results.returncode
 
     if run_result.returncode != 0 and not surviving_mutants(results.stdout):
         return run_result.returncode

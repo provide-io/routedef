@@ -8,5 +8,7 @@ mutants/
 __pycache__/
 dist/
 htmlcov/
+core
+core.*
 uv.lock
 .worktrees/

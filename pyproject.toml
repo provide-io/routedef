@@ -8,6 +8,12 @@ license = "MIT"
 authors = [{ name = "provide.io llc" }]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/provide-io/routedef"
+Repository = "https://github.com/provide-io/routedef"
+Documentation = "https://github.com/provide-io/routedef/blob/main/docs/architecture.md"
+Issues = "https://github.com/provide-io/routedef/issues"
+
 [project.optional-dependencies]
 fastapi = ["fastapi>=0.116.0"]
 
@@ -106,6 +112,7 @@ dev = [
     "codespell>=2.4.1",
     "detect-secrets>=1.5.0",
     "fastapi[standard]>=0.116.0",
+    "httpx2>=2.5.0",
     "mutmut>=3.5.0",
     "mypy>=1.18.2",
     "pip-audit>=2.9.0",
