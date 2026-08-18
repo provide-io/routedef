@@ -56,11 +56,44 @@ def compile_path_template(path_template: str) -> CompiledPath:
     )
 
 
-def match_path(compiled_path: CompiledPath, path: str) -> dict[str, str] | None:
+def match_path(
+    compiled_path: CompiledPath, path: str, *, strict_segments: bool = False
+) -> dict[str, str] | None:
+    """Match ``path`` and return its decoded params, or None if it does not match.
+
+    Matching runs against the still-percent-encoded path, so ``(?P<name>[^/]+)``
+    enforces "one path segment" on the wire. Decoding happens AFTER that check,
+    which means a param can arrive carrying characters that would have changed
+    the routing decision had they been present before the match: ``%2F`` decodes
+    to ``/``, ``%3F`` to ``?``, ``%23`` to ``#``. The pattern guarantees one
+    segment; the value handed back does not carry that guarantee.
+
+    That is deliberate and must stay the default -- an identifier may legitimately
+    contain a slash (an OIDC ``sub``, an object key), and refusing to decode one
+    would make those resources unaddressable.
+
+    It is a hazard only when a caller re-emits the decoded value into a URL. The
+    safe pairing is `expand_path_template`, which quotes with ``safe=""`` and so
+    puts the value back exactly where it came from. Anything that interpolates a
+    param into an upstream path with an f-string has stepped outside it.
+
+    ``strict_segments`` is for routes whose params are opaque ids that may never
+    contain a slash -- a proxy forwarding to an upstream service, typically. With
+    it, a param that decodes to something spanning segments is simply not a
+    match, and the request falls through to a 404 rather than reaching a handler
+    holding a value its route never promised. That mirrors the rule
+    `expand_path_template` already enforces in the outbound direction.
+    """
     match = compiled_path.pattern.fullmatch(path)
     if match is None:
         return None
-    return {name: unquote(match.group(name)) for name in compiled_path.param_names}
+    params: dict[str, str] = {}
+    for name in compiled_path.param_names:
+        value = unquote(match.group(name))
+        if strict_segments and "/" in value:
+            return None
+        params[name] = value
+    return params
 
 
 def expand_path_template(path_template: str, path_params: Mapping[str, object], *, encode: bool = True) -> str:

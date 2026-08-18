@@ -60,6 +60,44 @@ def test_path_params_are_url_decoded_without_crossing_slashes() -> None:
     assert match_path(compiled, "/v1/files/a/b") is None
 
 
+def test_decoded_params_may_span_segments_even_though_the_pattern_may_not() -> None:
+    """The gap this test's neighbour above does not cover.
+
+    That test asserts a LITERAL slash does not match, and its name reads as though
+    decoded params cannot cross a segment either. They can: the pattern runs on
+    the encoded path, and unquote runs after it, so %2F arrives as a slash the
+    route never matched. Pinning it because it is load-bearing, not incidental --
+    an id may legitimately contain a slash, so this must keep working.
+    """
+    compiled = compile_path_template("/v1/files/{name}")
+    assert match_path(compiled, "/v1/files/a%2Fb") == {"name": "a/b"}
+    assert match_path(compiled, "/v1/files/x%3Fy") == {"name": "x?y"}
+    assert match_path(compiled, "/v1/files/x%23z") == {"name": "x#z"}
+
+
+def test_strict_segments_refuses_a_param_that_decodes_across_segments() -> None:
+    """For proxy routes, where a decoded slash walks the upstream path."""
+    compiled = compile_path_template("/v1/definitions/{definition_id}")
+    traversal = "/v1/definitions/..%2F..%2Fadmin%2Fkeys"
+
+    assert match_path(compiled, traversal) == {"definition_id": "../../admin/keys"}
+    assert match_path(compiled, traversal, strict_segments=True) is None
+
+    # Only the segment rule tightens: ordinary decoding is untouched, including
+    # reserved characters that stay within one segment.
+    assert match_path(compiled, "/v1/definitions/a%20b", strict_segments=True) == {"definition_id": "a b"}
+    assert match_path(compiled, "/v1/definitions/x%3Fy", strict_segments=True) == {"definition_id": "x?y"}
+
+
+def test_strict_segments_checks_every_param_not_only_the_first() -> None:
+    compiled = compile_path_template("/v1/{account_id}/items/{item_id}")
+    assert match_path(compiled, "/v1/acct/items/a%2Fb", strict_segments=True) is None
+    assert match_path(compiled, "/v1/acct/items/ok", strict_segments=True) == {
+        "account_id": "acct",
+        "item_id": "ok",
+    }
+
+
 def test_path_expansion_can_skip_encoding_without_slash() -> None:
     assert expand_path_template("/v1/files/{name}", {"name": "a b.txt"}, encode=False) == "/v1/files/a b.txt"
 
