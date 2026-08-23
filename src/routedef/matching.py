@@ -56,9 +56,7 @@ def compile_path_template(path_template: str) -> CompiledPath:
     )
 
 
-def match_path(
-    compiled_path: CompiledPath, path: str, *, strict_segments: bool = False
-) -> dict[str, str] | None:
+def match_path(compiled_path: CompiledPath, path: str, *, strict_segments: bool = False) -> dict[str, str] | None:
     """Match ``path`` and return its decoded params, or None if it does not match.
 
     Matching runs against the still-percent-encoded path, so ``(?P<name>[^/]+)``
