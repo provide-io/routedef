@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Final
 
 _PACKAGE_NAME: Final = "routedef"
-_FALLBACK_VERSION: Final = "0.1.2"
+_FALLBACK_VERSION: Final = "0.2.0"
 _VERSION_FILE: Final = Path(__file__).resolve().parents[2] / "VERSION"
 
 
