@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 provide.io llc
 # SPDX-License-Identifier: MIT
 
-from routedef.contracts import RouteDef, RouteHandler, RouteRequest, RouteResponse
+from routedef.contracts import RouteDef, RouteHandler, RouteRequest, RouteResponse, Upstream
 from routedef.errors import BadRequestBody, RouteConfigError
 from routedef.headers import get_header, normalize_headers
 from routedef.matching import CompiledPath, compile_path_template, expand_path_template, match_path
@@ -23,6 +23,7 @@ __all__ = (
     "RouteRequest",
     "RouteResponse",
     "RouteTable",
+    "Upstream",
     "__version__",
     "compile_path_template",
     "decode_json_body",

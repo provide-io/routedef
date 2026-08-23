@@ -39,6 +39,12 @@ def _validate_name(name: str | None) -> str | None:
     return name
 
 
+def _validate_service(service: str) -> str:
+    if not service.strip():
+        raise RouteConfigError("upstream service must not be empty")
+    return service
+
+
 def _readonly_mapping(mapping: Mapping[str, ValueT]) -> Mapping[str, ValueT]:
     snapshot: dict[str, ValueT] = {key: _typed_snapshot(value) for key, value in mapping.items()}
     return MappingProxyType(snapshot)
@@ -87,12 +93,25 @@ class RouteHandler(Protocol[AuthT, ContextT]):
 
 
 @dataclass(frozen=True, slots=True)
+class Upstream:
+    service: str
+    method: str
+    path: str
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "service", _validate_service(self.service))
+        object.__setattr__(self, "method", _normalize_method(self.method))
+        object.__setattr__(self, "path", _validate_path(self.path))
+
+
+@dataclass(frozen=True, slots=True)
 class RouteDef(Generic[AuthT, ContextT]):
     method: str
     path: str
     handler: RouteHandler[AuthT, ContextT]
     metadata: Mapping[str, object] = field(default_factory=dict)
     name: str | None = None
+    proxies_to: Upstream | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "method", _normalize_method(self.method))

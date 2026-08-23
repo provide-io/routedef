@@ -11,7 +11,7 @@ from typing import Any, cast
 
 import pytest
 
-from routedef import JSONValue, RouteConfigError, RouteDef, RouteRequest, RouteResponse
+from routedef import JSONValue, RouteConfigError, RouteDef, RouteRequest, RouteResponse, Upstream
 
 
 async def echo(request: RouteRequest[str, dict[str, object]]) -> RouteResponse:
@@ -310,3 +310,52 @@ def test_route_handler_protocol_use() -> None:
     response: RouteResponse = asyncio.run(call_handler())
 
     assert response.body == {"auth": "token", "path": "/v1/echo"}
+
+
+def test_upstream_normalizes_method_to_uppercase() -> None:
+    upstream = Upstream("billing", "get", "/v1/accounting/report/pl")
+
+    assert upstream.method == "GET"
+
+
+@pytest.mark.parametrize("service", ["", "   "])
+def test_upstream_rejects_empty_service(service: str) -> None:
+    with pytest.raises(RouteConfigError) as exc_info:
+        Upstream(service, "GET", "/v1/accounting/report/pl")
+
+    assert str(exc_info.value) == "upstream service must not be empty"
+
+
+@pytest.mark.parametrize("method", ["", "   "])
+def test_upstream_rejects_empty_method(method: str) -> None:
+    with pytest.raises(RouteConfigError) as exc_info:
+        Upstream("billing", method, "/v1/accounting/report/pl")
+
+    assert str(exc_info.value) == "route method must not be empty"
+
+
+def test_upstream_rejects_path_without_leading_slash() -> None:
+    with pytest.raises(RouteConfigError) as exc_info:
+        Upstream("billing", "GET", "bad")
+
+    assert str(exc_info.value) == "route path must start with '/'"
+
+
+def test_upstream_is_immutable() -> None:
+    upstream = Upstream("billing", "GET", "/v1/accounting/report/pl")
+
+    with pytest.raises(AttributeError):
+        cast(Any, upstream).service = "account"
+
+
+def test_route_proxies_to_defaults_to_none() -> None:
+    route = RouteDef("GET", "/v1/moderation/queue", echo)
+
+    assert route.proxies_to is None
+
+
+def test_route_accepts_proxies_to() -> None:
+    upstream = Upstream("billing", "GET", "/v1/admin/moderation/queue")
+    route = RouteDef("GET", "/v1/moderation/queue", echo, proxies_to=upstream)
+
+    assert route.proxies_to is upstream
