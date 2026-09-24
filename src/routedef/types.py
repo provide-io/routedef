@@ -5,5 +5,5 @@ from collections.abc import Mapping
 from typing import TypeAlias
 
 JSONValue: TypeAlias = (
-    None | bool | int | float | str | list["JSONValue"] | tuple["JSONValue", ...] | Mapping[str, "JSONValue"]
+    bool | int | float | str | list["JSONValue"] | tuple["JSONValue", ...] | Mapping[str, "JSONValue"] | None
 )
