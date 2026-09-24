@@ -31,6 +31,14 @@ def test_text_response_serializes_utf8_and_reports_content_type() -> None:
     assert response_content_type(response) == "text/plain; charset=utf-8"
 
 
+def test_text_response_defaults_to_status_200() -> None:
+    assert RouteResponse.text("ok").status == 200
+
+
+def test_empty_response_defaults_to_status_204() -> None:
+    assert RouteResponse.empty().status == 204
+
+
 def test_json_response_serializes_with_compact_separators() -> None:
     response = RouteResponse.json({"ok": True, "items": [1]})
 

@@ -11,6 +11,9 @@ ALLOWED_SURVIVORS = {
     # for the generated catch-all route. Tests assert the route is absent from
     # OpenAPI, so this mutant is equivalent rather than under-tested behavior.
     "routedef.adapters.fastapi.x_build_fastapi_router__mutmut_148: survived",
+    # RouteResponse.body already defaults to None, so dropping the explicit
+    # body=None from RouteResponse.empty builds the same response.
+    "routedef.contracts.xǁRouteResponseǁempty__mutmut_5: survived",
 }
 
 

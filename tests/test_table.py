@@ -83,6 +83,17 @@ def test_route_table_rejects_duplicate_route_names() -> None:
     assert str(exc_info.value) == "route table contains duplicate route name 'items'"
 
 
+def test_route_table_accepts_distinct_route_names() -> None:
+    table = RouteTable(
+        [
+            RouteDef("GET", "/v1/items", echo, name="list-items"),
+            RouteDef("POST", "/v1/items", fallback, name="create-item"),
+        ]
+    )
+
+    assert [compiled.route.name for compiled in table.routes] == ["list-items", "create-item"]
+
+
 def test_route_match_exposes_route_and_read_only_path_params() -> None:
     route = RouteDef("GET", "/v1/{org}/items/{id}", echo)
     table = RouteTable([route])

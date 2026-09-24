@@ -51,7 +51,10 @@ def build_fastapi_router(
         if match is None:
             return await _error_response(error_handler, AdapterError("not_found", 404, "not found"), request)
 
-        context: ContextT = await _resolve_context(context_provider, request)
+        # ty 0.0.84 solves _resolve_context's ContextT through the provider's
+        # MaybeAwaitable return as `ContextT | Awaitable[ContextT]`; _resolve
+        # has already awaited it, so the value is a ContextT.
+        context: ContextT = await _resolve_context(context_provider, request)  # ty: ignore[invalid-assignment]
         auth: AuthT = await _resolve_auth(auth_provider, match.route, request, context)
         enforcement: EnforcerResult = await _resolve_enforcement(enforcer, match.route, request, context, auth)
         if isinstance(enforcement, RouteResponse):
